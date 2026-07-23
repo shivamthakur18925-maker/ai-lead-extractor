@@ -12,8 +12,10 @@ st.set_page_config(
 )
 
 # ==========================================
-# CONSTANTS & RAZORPAY PAYMENT LINKS
+# ADMIN & PAYMENT CONFIGURATION
 # ==========================================
+ADMIN_EMAIL = "shivamthakur18925@gmail.com"  # Your Admin Email for Free/Unlimited Access
+
 LINK_STARTER_599 = "https://rzp.io/rzp/f8fbbXfF"
 LINK_PRO_999 = "https://rzp.io/rzp/oU6CljR"
 
@@ -43,10 +45,12 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "user_email" not in st.session_state:
     st.session_state.user_email = ""
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
 if "user_plan" not in st.session_state:
-    st.session_state.user_plan = "Starter"  # Default plan
+    st.session_state.user_plan = "Starter"
 if "credits_remaining" not in st.session_state:
-    st.session_state.credits_remaining = 750  # 750 credits for ₹599 plan
+    st.session_state.credits_remaining = 750
 if "daily_used" not in st.session_state:
     st.session_state.daily_used = 0
 if "last_extraction_date" not in st.session_state:
@@ -64,11 +68,16 @@ st.sidebar.title("⚡ AI Lead Extractor")
 
 if st.session_state.authenticated:
     st.sidebar.success(f"Logged in: {st.session_state.user_email}")
-    st.sidebar.markdown(f"**Current Plan:** {st.session_state.user_plan}")
-    st.sidebar.metric(label="Remaining Credits", value=f"{st.session_state.credits_remaining} Leads")
     
-    daily_limit = 50 if st.session_state.user_plan == "Starter" else 150
-    st.sidebar.caption(f"Today's Usage: {st.session_state.daily_used} / {daily_limit} Leads")
+    if st.session_state.is_admin:
+        st.sidebar.info("👑 ADMIN ACCOUNT (Unlimited Access)")
+        st.sidebar.metric(label="Remaining Credits", value="Unlimited")
+    else:
+        st.sidebar.markdown(f"**Current Plan:** {st.session_state.user_plan}")
+        st.sidebar.metric(label="Remaining Credits", value=f"{st.session_state.credits_remaining} Leads")
+        daily_limit = 50 if st.session_state.user_plan == "Starter" else 150
+        st.sidebar.caption(f"Today's Usage: {st.session_state.daily_used} / {daily_limit} Leads")
+    
     st.sidebar.divider()
 
 menu = st.sidebar.radio("Navigation", ["Home & Plans", "Lead Extractor Tool", "Recharge & Account"])
@@ -119,42 +128,50 @@ elif menu == "Lead Extractor Tool":
     # User Login Check
     if not st.session_state.authenticated:
         st.warning("Please enter your registered email address to access the extraction tool.")
-        email_input = st.text_input("Enter Email Address:")
+        email_input = st.text_input("Enter Email Address:").strip().lower()
         
         if st.button("Access Dashboard"):
             if is_valid_email(email_input):
                 st.session_state.authenticated = True
                 st.session_state.user_email = email_input
-                st.success("Access Granted! Loading your dashboard...")
+                
+                # Check if logged in user is Admin
+                if email_input == ADMIN_EMAIL.lower():
+                    st.session_state.is_admin = True
+                    st.session_state.credits_remaining = 999999
+                    st.success("Welcome Admin! You have granted unlimited free access.")
+                else:
+                    st.session_state.is_admin = False
+                    st.success("Access Granted! Loading your dashboard...")
+                
                 st.rerun()
             else:
                 st.error("Invalid or Disallowed Email! Temporary and throwaway emails are strictly blocked.")
     else:
-        # Check credit balance
-        if st.session_state.credits_remaining <= 0:
+        # Check credit balance for normal users
+        if not st.session_state.is_admin and st.session_state.credits_remaining <= 0:
             st.error("⚠️ You have exhausted your credits! Please recharge your account to continue extracting leads.")
             st.link_button("Recharge ₹599 Plan", LINK_STARTER_599, type="primary")
             st.link_button("Recharge ₹999 Plan", LINK_PRO_999)
         else:
-            daily_limit = 50 if st.session_state.user_plan == "Starter" else 150
+            daily_limit = 99999 if st.session_state.is_admin else (50 if st.session_state.user_plan == "Starter" else 150)
             
             st.subheader("Start Extracting Verified Leads")
             col_a, col_b = st.columns(2)
             with col_a:
                 keyword = st.text_input("Target Niche / Industry (e.g., Gyms, Real Estate, Clinics):")
             with col_b:
-                location = st.text_input("Target Location (e.g., Mumbai, Delhi, Bangalore):")
+                location = st.text_input("Target Location (e.g., Patna, Delhi, Mumbai):")
 
-            max_allowed = min(20 if st.session_state.user_plan == "Starter" else 50, 
-                             st.session_state.credits_remaining, 
-                             daily_limit - st.session_state.daily_used)
+            max_batch = 50 if st.session_state.is_admin else (20 if st.session_state.user_plan == "Starter" else 50)
+            max_allowed = min(max_batch, st.session_state.credits_remaining, max(1, daily_limit - st.session_state.daily_used))
             
             num_leads = st.number_input("Number of Leads to Extract:", min_value=1, max_value=max(1, max_allowed), value=min(10, max(1, max_allowed)))
 
             if st.button("Extract Leads Now"):
                 if not keyword or not location:
                     st.error("Please enter both Keyword and Location.")
-                elif st.session_state.daily_used + num_leads > daily_limit:
+                elif not st.session_state.is_admin and (st.session_state.daily_used + num_leads > daily_limit):
                     st.error(f"Daily limit reached! You can only extract {daily_limit - st.session_state.daily_used} more leads today.")
                 else:
                     with st.spinner(f"Extracting {num_leads} verified leads for '{keyword}' in '{location}'..."):
@@ -163,18 +180,19 @@ elif menu == "Lead Extractor Tool":
                         for i in range(1, num_leads + 1):
                             extracted_results.append({
                                 "Lead ID": f"LD-{1000+i}",
-                                "Business Name": f"{keyword.capitalize()} Service {i}",
-                                "Phone": f"+91 98765{i:05d}",
-                                "Email": f"info@service{i}.com",
+                                "Business Name": f"{keyword.capitalize()} Center {i}",
+                                "Phone": f"+91 98350{i:05d}",
+                                "Email": f"contact@{keyword.lower().replace(' ', '')}{i}.com",
                                 "Location": location.capitalize(),
                                 "Status": "Verified"
                             })
                         
-                        # Deduct credits & update usage
-                        st.session_state.credits_remaining -= num_leads
-                        st.session_state.daily_used += num_leads
+                        # Deduct credits & update usage if not admin
+                        if not st.session_state.is_admin:
+                            st.session_state.credits_remaining -= num_leads
+                            st.session_state.daily_used += num_leads
 
-                        st.success(f"Successfully extracted {num_leads} leads! {num_leads} credits deducted.")
+                        st.success(f"Successfully extracted {num_leads} leads!")
                         st.dataframe(extracted_results, use_container_width=True)
 
 # ==========================================
@@ -185,8 +203,13 @@ elif menu == "Recharge & Account":
     
     if st.session_state.authenticated:
         st.write(f"**Account Email:** {st.session_state.user_email}")
-        st.write(f"**Current Plan:** {st.session_state.user_plan}")
-        st.write(f"**Remaining Credits:** {st.session_state.credits_remaining} Leads")
+        
+        if st.session_state.is_admin:
+            st.write("**Account Role:** 👑 Admin (Free Unlimited Access Active)")
+        else:
+            st.write(f"**Current Plan:** {st.session_state.user_plan}")
+            st.write(f"**Remaining Credits:** {st.session_state.credits_remaining} Leads")
+            
         st.write(f"**Security Shield:** Active (Anti-Temp Mail & Anti-Abuse Enabled)")
         
         st.divider()
@@ -208,6 +231,7 @@ elif menu == "Recharge & Account":
         if st.button("Logout Account"):
             st.session_state.authenticated = False
             st.session_state.user_email = ""
+            st.session_state.is_admin = False
             st.rerun()
     else:
         st.info("Please log in from the 'Lead Extractor Tool' tab to view account status.")
