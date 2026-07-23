@@ -6,7 +6,7 @@ import hashlib
 from groq import Groq
 
 # -------------------------------------------------------------------
-# 1. Page Config & CSS Branding (Dark/Light Mode Compatible)
+# 1. Page Config & Custom CSS (Dark & Light Mode Compatible)
 # -------------------------------------------------------------------
 st.set_page_config(
     page_title="AI Lead Extractor & Pro Outreach Bot",
@@ -14,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom Styling for Pricing Cards and Dark/Light Mode Fix
+# Custom Styling for Branding, Badges & Pricing Cards
 st.markdown("""
     <style>
     .main-header { font-size: 2.3rem; font-weight: 800; margin-bottom: 5px; }
@@ -30,7 +30,7 @@ st.markdown("""
         display: inline-block;
         margin-right: 10px;
         margin-bottom: 10px;
-        border: 1px solid #E2E8F0;
+        border: 1px solid #CBD5E1;
     }
 
     /* Fixed Card Styles for Both Light & Dark Modes */
@@ -77,6 +77,7 @@ TEMP_MAIL_DOMAINS = [
 ]
 
 def is_temp_email(email):
+    """Check if provided email belongs to a disposable email service."""
     if "@" not in email:
         return True
     domain = email.split("@")[1].lower()
@@ -85,7 +86,7 @@ def is_temp_email(email):
             return True
     return False
 
-# Session States Initialization
+# Initialize Session States
 if "user_email" not in st.session_state:
     st.session_state.user_email = ""
 if "user_credits" not in st.session_state:
@@ -120,7 +121,7 @@ client = get_groq_client()
 st.markdown("<div class='main-header'>🚀 AI Lead Extractor & Pro Outreach Bot</div>", unsafe_allow_html=True)
 st.markdown("<div class='sub-header'>Turn raw internet text into structured leads and high-converting personalized outreach in seconds.</div>", unsafe_allow_html=True)
 
-# Visual Enhancements to fill empty space
+# Visual Enhancements
 st.markdown("""
     <div style='margin-bottom: 20px;'>
         <span class='feature-badge'>⚡ 10x Faster Extraction</span>
@@ -139,7 +140,7 @@ if not st.session_state.user_email:
     st.sidebar.subheader("Login / Register")
     email_input = st.sidebar.text_input("Enter your Work or Personal Email:")
     
-    if st.sidebar.button("Login to Start Trial", use_container_width=True):
+    if st.sidebar.button("Login to Start Free Trial", use_container_width=True):
         if not email_input or not re.match(r"[^@]+@[^@]+\.[^@]+", email_input):
             st.sidebar.error("❌ Please enter a valid email address.")
         elif is_temp_email(email_input):
@@ -147,7 +148,7 @@ if not st.session_state.user_email:
         else:
             st.session_state.user_email = email_input.strip().lower()
             st.session_state.user_credits = 5
-            st.sidebar.success("✅ Logged in! 5 Free Credits loaded.")
+            st.sidebar.success("✅ Logged in successfully! 5 Free Credits loaded.")
             st.rerun()
 
 else:
@@ -158,14 +159,14 @@ else:
     else:
         st.sidebar.markdown(f"🎟️ **Free Credits Remaining:** `{st.session_state.user_credits} / 5`")
 
-    # License Key Activation Section
+    # License Key Activation Option
     st.sidebar.markdown("---")
     st.sidebar.subheader("🔑 Activate Paid License")
     license_key = st.sidebar.text_input("Enter License Key received after payment:", type="password")
     if st.sidebar.button("Activate License", use_container_width=True):
         if license_key.strip() == "SHIVAM_PRO_2026":
             st.session_state.is_pro = True
-            st.sidebar.success("🎉 Pro Plan Activated!")
+            st.sidebar.success("🎉 Pro Plan Activated Successfully!")
             st.rerun()
         else:
             st.sidebar.error("❌ Invalid Key! Contact support after payment.")
@@ -205,7 +206,7 @@ if st.button("⚡ Extract Leads & Generate Outreach", type="primary", use_contai
         st.warning("⚠️ Please enter your email in the sidebar first to access the tool!")
     
     elif not st.session_state.is_pro and st.session_state.user_credits <= 0:
-        st.error("🚨 Free Credits Exhausted! Upgrade below to continue.")
+        st.error("🚨 Free Credits Exhausted! Upgrade below to continue extracting leads.")
         
     elif not input_text.strip():
         st.warning("Please paste some text first.")
@@ -239,9 +240,9 @@ if st.button("⚡ Extract Leads & Generate Outreach", type="primary", use_contai
                 if not st.session_state.is_pro:
                     st.session_state.user_credits -= 1
 
-                st.success("✅ Leads Extracted Successfully!")
+                st.success("✅ Lead Extraction Completed Successfully!")
 
-                st.subheader("📊 Extracted Results")
+                st.subheader("📊 Extracted Leads & Outreach")
                 
                 try:
                     clean_csv = result_text.replace("```csv", "").replace("```", "").strip()
@@ -259,10 +260,10 @@ if st.button("⚡ Extract Leads & Generate Outreach", type="primary", use_contai
                     st.text(result_text)
 
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error executing AI extraction: {e}")
 
 # -------------------------------------------------------------------
-# 7. How It Works Section (Fills UI Space & Adds Trust)
+# 7. How It Works Section
 # -------------------------------------------------------------------
 st.markdown("---")
 st.subheader("📖 How It Works")
@@ -270,7 +271,7 @@ h_col1, h_col2, h_col3 = st.columns(3)
 
 with h_col1:
     st.markdown("#### 1. Paste Data")
-    st.caption("Paste any raw website text, social bio, or business directory content into the box.")
+    st.caption("Paste any raw website text, social bio, or business directory content into the input area.")
 
 with h_col2:
     st.markdown("#### 2. Select Outreach")
@@ -281,7 +282,7 @@ with h_col3:
     st.caption("Get structured tables with pain points and 1-click personalized messages exported to CSV.")
 
 # -------------------------------------------------------------------
-# 8. Fixed Dark/Light Mode Pricing Section
+# 8. Pricing & Payment Section (With Active UPI ID)
 # -------------------------------------------------------------------
 st.markdown("---")
 st.subheader("💳 Upgrade & Pricing Plans")
@@ -300,7 +301,7 @@ with p_col1:
         </div>
     """, unsafe_allow_html=True)
     st.write("")
-    st.info("📲 **To Purchase (₹599):** Send payment via UPI to **`yourupi@upi`** and submit transaction ID to get your Activation Key instantly.")
+    st.info("📲 **Pay ₹599 via UPI:** `aileadsbot@naviaxis`\n\nSend transaction reference/screenshot to get your Pro Activation Key.")
 
 with p_col2:
     st.markdown("""
@@ -314,6 +315,6 @@ with p_col2:
         </div>
     """, unsafe_allow_html=True)
     st.write("")
-    st.success("📲 **To Purchase (₹999):** Send payment via UPI to **`yourupi@upi`** and submit transaction ID to get your Activation Key instantly.")
+    st.success("📲 **Pay ₹999 via UPI:** `aileadsbot@naviaxis`\n\nSend transaction reference/screenshot to get your Pro Activation Key.")
 
-st.caption("🔒 Payments are 100% secure. After payment, your License Key will be sent to your registered email or instant chat.")
+st.caption("🔒 Payments are processed 100% securely via UPI. Enter your License Key in the sidebar after payment to activate.")
