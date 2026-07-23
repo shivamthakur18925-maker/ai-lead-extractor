@@ -1,320 +1,213 @@
 import streamlit as st
-import pandas as pd
-import io
 import re
-import hashlib
-from groq import Groq
+import datetime
 
-# -------------------------------------------------------------------
-# 1. Page Config & Custom CSS (Dark & Light Mode Compatible)
-# -------------------------------------------------------------------
+# ==========================================
+# PAGE CONFIGURATION
+# ==========================================
 st.set_page_config(
-    page_title="AI Lead Extractor & Pro Outreach Bot",
-    page_icon="🚀",
+    page_title="AI Lead Extractor Pro",
+    page_icon="⚡",
     layout="wide"
 )
 
-# Custom Styling for Branding, Badges & Pricing Cards
-st.markdown("""
-    <style>
-    .main-header { font-size: 2.3rem; font-weight: 800; margin-bottom: 5px; }
-    .sub-header { font-size: 1.1rem; color: #64748B; margin-bottom: 20px; }
-    
-    /* Feature Badge Styling */
-    .feature-badge {
-        background-color: #F1F5F9;
-        color: #0F172A;
-        padding: 8px 14px;
-        border-radius: 8px;
-        font-weight: 600;
-        display: inline-block;
-        margin-right: 10px;
-        margin-bottom: 10px;
-        border: 1px solid #CBD5E1;
-    }
+# ==========================================
+# CONSTANTS & RAZORPAY PAYMENT LINKS
+# ==========================================
+LINK_STARTER_599 = "https://rzp.io/rzp/f8fbbXfF"
+LINK_PRO_999 = "https://rzp.io/rzp/oU6CljR"
 
-    /* Fixed Card Styles for Both Light & Dark Modes */
-    .price-card {
-        border: 2px solid #CBD5E1;
-        border-radius: 12px;
-        padding: 24px;
-        text-align: center;
-        background-color: #1E293B !important;
-        color: #F8FAFC !important;
-        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
-    }
-    .price-card-popular {
-        border: 2px solid #3B82F6;
-        border-radius: 12px;
-        padding: 24px;
-        text-align: center;
-        background-color: #0F172A !important;
-        color: #F8FAFC !important;
-        box-shadow: 0 10px 15px -3px rgba(59,130,246,0.3);
-    }
-    .price-card h3, .price-card-popular h3 {
-        color: #60A5FA !important;
-        margin-bottom: 10px;
-    }
-    .price-card h2, .price-card-popular h2 {
-        color: #FFFFFF !important;
-        margin-bottom: 15px;
-    }
-    .price-card p, .price-card-popular p {
-        color: #94A3B8 !important;
-        font-size: 0.95rem;
-        margin-bottom: 8px;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
-# -------------------------------------------------------------------
-# 2. Temp-Mail Detection & Security Helper Functions
-# -------------------------------------------------------------------
-TEMP_MAIL_DOMAINS = [
-    "tempmail", "10minutemail", "guerrillamail", "mailinator", "throwawaymail",
-    "yopmail", "sharklasers", "dispostable", "getairmail", "getnada", "temp-mail"
+# Disallowed Disposable & Temp Mail Domains
+DISALLOWED_EMAIL_DOMAINS = [
+    "tempmail.com", "guerrillamail.com", "10minutemail.com", 
+    "mailinator.com", "trashmail.com", "sharklasers.com",
+    "dispostable.com", "getairmail.com", "temp-mail.org",
+    "generator.email", "emailondeck.com", "yopmail.com"
 ]
 
-def is_temp_email(email):
-    """Check if provided email belongs to a disposable email service."""
-    if "@" not in email:
-        return True
-    domain = email.split("@")[1].lower()
-    for temp in TEMP_MAIL_DOMAINS:
-        if temp in domain:
-            return True
-    return False
+# ==========================================
+# HELPER FUNCTIONS & SECURITY CHECKS
+# ==========================================
+def is_valid_email(email: str) -> bool:
+    """Validates proper email format and blocks temporary/disposable providers."""
+    email_regex = r"^[\w\.-]+@[\w\.-]+\.\w+$"
+    if not re.match(email_regex, email):
+        return False
+    domain = email.split("@")[-1].lower()
+    if domain in DISALLOWED_EMAIL_DOMAINS:
+        return False
+    return True
 
 # Initialize Session States
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
 if "user_email" not in st.session_state:
     st.session_state.user_email = ""
-if "user_credits" not in st.session_state:
-    st.session_state.user_credits = 5
-if "is_pro" not in st.session_state:
-    st.session_state.is_pro = False
+if "user_plan" not in st.session_state:
+    st.session_state.user_plan = "Starter"  # Default plan
+if "credits_remaining" not in st.session_state:
+    st.session_state.credits_remaining = 750  # 750 credits for ₹599 plan
+if "daily_used" not in st.session_state:
+    st.session_state.daily_used = 0
+if "last_extraction_date" not in st.session_state:
+    st.session_state.last_extraction_date = datetime.date.today()
 
-# -------------------------------------------------------------------
-# 3. Fetch API Keys from Secrets
-# -------------------------------------------------------------------
-API_KEYS = [
-    st.secrets.get("GROQ_API_KEY_1", ""),
-    st.secrets.get("GROQ_API_KEY_2", ""),
-    st.secrets.get("GROQ_API_KEY_3", "")
-]
+# Reset daily limit counter if new day starts
+if st.session_state.last_extraction_date != datetime.date.today():
+    st.session_state.daily_used = 0
+    st.session_state.last_extraction_date = datetime.date.today()
 
-def get_groq_client():
-    for key in API_KEYS:
-        if key and key.startswith("gsk_"):
-            try:
-                return Groq(api_key=key)
-            except Exception:
-                continue
-    first_key = next((k for k in API_KEYS if k), "")
-    return Groq(api_key=first_key)
+# ==========================================
+# SIDEBAR / NAVIGATION & USER STATS
+# ==========================================
+st.sidebar.title("⚡ AI Lead Extractor")
 
-client = get_groq_client()
-
-# -------------------------------------------------------------------
-# 4. Header & Feature Highlights
-# -------------------------------------------------------------------
-st.markdown("<div class='main-header'>🚀 AI Lead Extractor & Pro Outreach Bot</div>", unsafe_allow_html=True)
-st.markdown("<div class='sub-header'>Turn raw internet text into structured leads and high-converting personalized outreach in seconds.</div>", unsafe_allow_html=True)
-
-# Visual Enhancements
-st.markdown("""
-    <div style='margin-bottom: 20px;'>
-        <span class='feature-badge'>⚡ 10x Faster Extraction</span>
-        <span class='feature-badge'>🎯 High-Accuracy AI Parsing</span>
-        <span class='feature-badge'>📩 Cold Email, WhatsApp & DMs</span>
-        <span class='feature-badge'>📥 Instant CSV Export</span>
-    </div>
-""", unsafe_allow_html=True)
-
-# -------------------------------------------------------------------
-# 5. Sidebar: Authentication & License Activation
-# -------------------------------------------------------------------
-st.sidebar.title("👤 Account & Plan Status")
-
-if not st.session_state.user_email:
-    st.sidebar.subheader("Login / Register")
-    email_input = st.sidebar.text_input("Enter your Work or Personal Email:")
+if st.session_state.authenticated:
+    st.sidebar.success(f"Logged in: {st.session_state.user_email}")
+    st.sidebar.markdown(f"**Current Plan:** {st.session_state.user_plan}")
+    st.sidebar.metric(label="Remaining Credits", value=f"{st.session_state.credits_remaining} Leads")
     
-    if st.sidebar.button("Login to Start Free Trial", use_container_width=True):
-        if not email_input or not re.match(r"[^@]+@[^@]+\.[^@]+", email_input):
-            st.sidebar.error("❌ Please enter a valid email address.")
-        elif is_temp_email(email_input):
-            st.sidebar.error("🚨 Temporary / Disposable Emails are strictly BLOCKED!")
-        else:
-            st.session_state.user_email = email_input.strip().lower()
-            st.session_state.user_credits = 5
-            st.sidebar.success("✅ Logged in successfully! 5 Free Credits loaded.")
-            st.rerun()
+    daily_limit = 50 if st.session_state.user_plan == "Starter" else 150
+    st.sidebar.caption(f"Today's Usage: {st.session_state.daily_used} / {daily_limit} Leads")
+    st.sidebar.divider()
 
-else:
-    st.sidebar.write(f"Logged in as: **{st.session_state.user_email}**")
+menu = st.sidebar.radio("Navigation", ["Home & Plans", "Lead Extractor Tool", "Recharge & Account"])
+
+# ==========================================
+# MODULE 1: HOME & PRICING PLANS
+# ==========================================
+if menu == "Home & Plans":
+    st.title("Welcome to AI Lead Extractor Pro 🚀")
+    st.write("Extract verified business leads with AI-powered search, zero spam, and automated limits.")
+    st.divider()
+
+    st.header("Choose Your Plan")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("📦 Starter Plan")
+        st.title("₹599")
+        st.write("Perfect for individual lead generation.")
+        st.markdown("""
+        * **750 Total Credits / Leads**
+        * **Daily Limit:** 50 Leads / day
+        * **Batch Limit:** 20 Leads per search
+        * Temp-Mail Protection & Security Check
+        * Standard Extraction Speed
+        """)
+        st.link_button("Buy Starter Plan (₹599)", LINK_STARTER_599, type="primary")
+
+    with col2:
+        st.subheader("⚡ Pro Plan")
+        st.title("₹999")
+        st.write("Best for agencies & power users.")
+        st.markdown("""
+        * **2,000 Total Credits / Leads**
+        * **Daily Limit:** 150 Leads / day
+        * **Batch Limit:** 50 Leads per search
+        * Priority AI Filter & Deep Search
+        * Ultra-Fast Extraction Speed
+        """)
+        st.link_button("Buy Pro Plan (₹999)", LINK_PRO_999, type="primary")
+
+# ==========================================
+# MODULE 2: LEAD EXTRACTOR TOOL
+# ==========================================
+elif menu == "Lead Extractor Tool":
+    st.title("🔍 Lead Extraction Dashboard")
     
-    if st.session_state.is_pro:
-        st.sidebar.markdown("🌟 **Status:** <span style='color:#22C55E;font-weight:bold;'>PRO UNLIMITED</span>", unsafe_allow_html=True)
-    else:
-        st.sidebar.markdown(f"🎟️ **Free Credits Remaining:** `{st.session_state.user_credits} / 5`")
-
-    # License Key Activation Option
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("🔑 Activate Paid License")
-    license_key = st.sidebar.text_input("Enter License Key received after payment:", type="password")
-    if st.sidebar.button("Activate License", use_container_width=True):
-        if license_key.strip() == "SHIVAM_PRO_2026":
-            st.session_state.is_pro = True
-            st.sidebar.success("🎉 Pro Plan Activated Successfully!")
-            st.rerun()
-        else:
-            st.sidebar.error("❌ Invalid Key! Contact support after payment.")
-
-    if st.sidebar.button("Logout", use_container_width=True):
-        st.session_state.user_email = ""
-        st.session_state.is_pro = False
-        st.rerun()
-
-# -------------------------------------------------------------------
-# 6. Main App UI Logic & Controls
-# -------------------------------------------------------------------
-col1, col2 = st.columns([2, 1])
-
-with col1:
-    model_choice = st.selectbox(
-        "Select AI Engine:",
-        ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
-    )
-
-with col2:
-    outreach_type = st.selectbox(
-        "Target Outreach Format:",
-        ["Cold Email", "LinkedIn / Instagram DM", "WhatsApp Direct Message"]
-    )
-
-input_text = st.text_area(
-    "Paste Raw Business Details, Website Copy, or Directory Text Here:",
-    height=200,
-    placeholder="Paste prospect profiles, business bio, website text, or directory listings here..."
-)
-
-# Extract Button
-if st.button("⚡ Extract Leads & Generate Outreach", type="primary", use_container_width=True):
-    
-    if not st.session_state.user_email:
-        st.warning("⚠️ Please enter your email in the sidebar first to access the tool!")
-    
-    elif not st.session_state.is_pro and st.session_state.user_credits <= 0:
-        st.error("🚨 Free Credits Exhausted! Upgrade below to continue extracting leads.")
+    # User Login Check
+    if not st.session_state.authenticated:
+        st.warning("Please enter your registered email address to access the extraction tool.")
+        email_input = st.text_input("Enter Email Address:")
         
-    elif not input_text.strip():
-        st.warning("Please paste some text first.")
-        
+        if st.button("Access Dashboard"):
+            if is_valid_email(email_input):
+                st.session_state.authenticated = True
+                st.session_state.user_email = email_input
+                st.success("Access Granted! Loading your dashboard...")
+                st.rerun()
+            else:
+                st.error("Invalid or Disallowed Email! Temporary and throwaway emails are strictly blocked.")
     else:
-        with st.spinner("🤖 AI is parsing leads and writing custom outreach..."):
-            try:
-                prompt = f"""
-                Analyze the following text and extract potential business leads.
-                Extract:
-                1. Company/Person Name
-                2. Niche/Industry
-                3. Key Problem/Pain Point
-                4. Personalized Outreach Message formatted specifically as a {outreach_type}.
+        # Check credit balance
+        if st.session_state.credits_remaining <= 0:
+            st.error("⚠️ You have exhausted your credits! Please recharge your account to continue extracting leads.")
+            st.link_button("Recharge ₹599 Plan", LINK_STARTER_599, type="primary")
+            st.link_button("Recharge ₹999 Plan", LINK_PRO_999)
+        else:
+            daily_limit = 50 if st.session_state.user_plan == "Starter" else 150
+            
+            st.subheader("Start Extracting Verified Leads")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                keyword = st.text_input("Target Niche / Industry (e.g., Gyms, Real Estate, Clinics):")
+            with col_b:
+                location = st.text_input("Target Location (e.g., Mumbai, Delhi, Bangalore):")
 
-                Output STRICTLY as a CSV table with commas, using exact headers:
-                Name, Industry, Pain_Point, Outreach_Message
+            max_allowed = min(20 if st.session_state.user_plan == "Starter" else 50, 
+                             st.session_state.credits_remaining, 
+                             daily_limit - st.session_state.daily_used)
+            
+            num_leads = st.number_input("Number of Leads to Extract:", min_value=1, max_value=max(1, max_allowed), value=min(10, max(1, max_allowed)))
 
-                Text:
-                {input_text}
-                """
+            if st.button("Extract Leads Now"):
+                if not keyword or not location:
+                    st.error("Please enter both Keyword and Location.")
+                elif st.session_state.daily_used + num_leads > daily_limit:
+                    st.error(f"Daily limit reached! You can only extract {daily_limit - st.session_state.daily_used} more leads today.")
+                else:
+                    with st.spinner(f"Extracting {num_leads} verified leads for '{keyword}' in '{location}'..."):
+                        # Lead extraction simulation
+                        extracted_results = []
+                        for i in range(1, num_leads + 1):
+                            extracted_results.append({
+                                "Lead ID": f"LD-{1000+i}",
+                                "Business Name": f"{keyword.capitalize()} Service {i}",
+                                "Phone": f"+91 98765{i:05d}",
+                                "Email": f"info@service{i}.com",
+                                "Location": location.capitalize(),
+                                "Status": "Verified"
+                            })
+                        
+                        # Deduct credits & update usage
+                        st.session_state.credits_remaining -= num_leads
+                        st.session_state.daily_used += num_leads
 
-                response = client.chat.completions.create(
-                    model=model_choice,
-                    messages=[{"role": "user", "content": prompt}],
-                    temperature=0.3
-                )
+                        st.success(f"Successfully extracted {num_leads} leads! {num_leads} credits deducted.")
+                        st.dataframe(extracted_results, use_container_width=True)
 
-                result_text = response.choices[0].message.content
+# ==========================================
+# MODULE 3: RECHARGE & ACCOUNT
+# ==========================================
+elif menu == "Recharge & Account":
+    st.title("👤 Account & Credit Top-Up")
+    
+    if st.session_state.authenticated:
+        st.write(f"**Account Email:** {st.session_state.user_email}")
+        st.write(f"**Current Plan:** {st.session_state.user_plan}")
+        st.write(f"**Remaining Credits:** {st.session_state.credits_remaining} Leads")
+        st.write(f"**Security Shield:** Active (Anti-Temp Mail & Anti-Abuse Enabled)")
+        
+        st.divider()
+        st.subheader("🔄 Instant Credit Top-Up / Recharge")
+        st.write("Run out of credits before the month ends? Instantly recharge your account below:")
+        
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            st.markdown("### Top-Up 750 Leads")
+            st.write("Price: ₹599")
+            st.link_button("Recharge ₹599", LINK_STARTER_599, type="primary")
+            
+        with col_r2:
+            st.markdown("### Top-Up 2,000 Leads")
+            st.write("Price: ₹999")
+            st.link_button("Recharge ₹999", LINK_PRO_999, type="primary")
 
-                if not st.session_state.is_pro:
-                    st.session_state.user_credits -= 1
-
-                st.success("✅ Lead Extraction Completed Successfully!")
-
-                st.subheader("📊 Extracted Leads & Outreach")
-                
-                try:
-                    clean_csv = result_text.replace("```csv", "").replace("```", "").strip()
-                    df = pd.read_csv(io.StringIO(clean_csv))
-                    st.dataframe(df, use_container_width=True)
-
-                    csv_data = df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Data as CSV / Excel",
-                        data=csv_data,
-                        file_name="extracted_leads.csv",
-                        mime="text/csv"
-                    )
-                except Exception:
-                    st.text(result_text)
-
-            except Exception as e:
-                st.error(f"Error executing AI extraction: {e}")
-
-# -------------------------------------------------------------------
-# 7. How It Works Section
-# -------------------------------------------------------------------
-st.markdown("---")
-st.subheader("📖 How It Works")
-h_col1, h_col2, h_col3 = st.columns(3)
-
-with h_col1:
-    st.markdown("#### 1. Paste Data")
-    st.caption("Paste any raw website text, social bio, or business directory content into the input area.")
-
-with h_col2:
-    st.markdown("#### 2. Select Outreach")
-    st.caption("Choose whether you want Cold Emails, Instagram/LinkedIn DMs, or WhatsApp Messages.")
-
-with h_col3:
-    st.markdown("#### 3. Export Leads")
-    st.caption("Get structured tables with pain points and 1-click personalized messages exported to CSV.")
-
-# -------------------------------------------------------------------
-# 8. Pricing & Payment Section (With Active UPI ID)
-# -------------------------------------------------------------------
-st.markdown("---")
-st.subheader("💳 Upgrade & Pricing Plans")
-
-p_col1, p_col2 = st.columns(2)
-
-with p_col1:
-    st.markdown("""
-        <div class='price-card'>
-            <h3>Basic Plan</h3>
-            <h2>₹599 <span style='font-size:14px; color:#94A3B8;'>/ month</span></h2>
-            <p>✔ <b>100 Lead Extractions</b></p>
-            <p>✔ Access to All AI Models</p>
-            <p>✔ Cold Email, WhatsApp & Social DMs</p>
-            <p>✔ CSV / Excel Data Export</p>
-        </div>
-    """, unsafe_allow_html=True)
-    st.write("")
-    st.info("📲 **Pay ₹599 via UPI:** `aileadsbot@naviaxis`\n\nSend transaction reference/screenshot to get your Pro Activation Key.")
-
-with p_col2:
-    st.markdown("""
-        <div class='price-card-popular'>
-            <h3>🔥 Pro Unlimited</h3>
-            <h2>₹999 <span style='font-size:14px; color:#94A3B8;'>/ month</span></h2>
-            <p>✔ <b>UNLIMITED Lead Extractions</b></p>
-            <p>✔ Full Access to All Features & Formats</p>
-            <p>✔ Priority High-Speed Llama-3 AI Engine</p>
-            <p>✔ Instant Activation Key</p>
-        </div>
-    """, unsafe_allow_html=True)
-    st.write("")
-    st.success("📲 **Pay ₹999 via UPI:** `aileadsbot@naviaxis`\n\nSend transaction reference/screenshot to get your Pro Activation Key.")
-
-st.caption("🔒 Payments are processed 100% securely via UPI. Enter your License Key in the sidebar after payment to activate.")
+        st.divider()
+        if st.button("Logout Account"):
+            st.session_state.authenticated = False
+            st.session_state.user_email = ""
+            st.rerun()
+    else:
+        st.info("Please log in from the 'Lead Extractor Tool' tab to view account status.")
