@@ -1,3 +1,7 @@
 streamlit
 groq
+pandasstreamlit
+groq
 pandas
+requests
+python-dotenv
