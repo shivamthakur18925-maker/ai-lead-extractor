@@ -9,14 +9,13 @@ import json
 st.set_page_config(page_title="AI Lead Extractor Pro", page_icon="🚀", layout="wide")
 
 st.title("🚀 AI Lead Extractor Pro")
-st.caption("Extract verified real-time B2B business leads powered by Google Places API (New) & AI")
+st.caption("Extract verified real-time B2B business leads powered by Google Places API & AI")
 
 # ---------------------------------------------------------
 # Admin & Security Configuration
 # ---------------------------------------------------------
 ADMIN_EMAILS = ["shivamthakur18925@gmail.com"]
 
-# Disposable / Temp Mail Domain Blocklist
 BLOCKED_TEMP_DOMAINS = [
     "tempmail.com", "yopmail.com", "guerrillamail.com", "10minutemail.com",
     "gwshare.com", "mailinator.com", "trashmail.com", "dispostable.com",
@@ -83,88 +82,94 @@ with col_b:
 st.divider()
 
 # ---------------------------------------------------------
-# API Key Fetching (From Streamlit Secrets)
+# API Key Fetching Engine
 # ---------------------------------------------------------
 def get_places_api_key():
-    try:
-        for i in range(1, 7):
+    # Streamlit secrets fetch
+    for i in range(1, 7):
+        try:
             key = st.secrets.get(f"PLACES_API_KEY_{i}")
-            if key and "AIzaSy" in key and "your_" not in key:
+            if key and len(key) > 10:
                 return key
-    except Exception:
-        pass
+        except Exception:
+            pass
     return None
 
 # ---------------------------------------------------------
-# Google Places API (New) Lead Extraction Logic
+# Robust Google Places Search Engine
 # ---------------------------------------------------------
-def fetch_real_google_leads_new_api(category, location, limit=10):
+def fetch_google_leads(category, location, limit=5):
     api_key = get_places_api_key()
     
     if not api_key:
-        st.error("⚠️ Google Places API Key not found in Secrets. Please check your configuration.")
+        st.error("❌ API Key Error: Streamlit Secrets mein PLACES_API_KEY nahi mili. Kripya Secrets check karein!")
         return []
 
-    # Places API (New) Endpoint
-    url = "https://places.googleapis.com/v1/places:searchText"
-    
-    headers = {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": api_key,
-        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.rating,places.websiteUri"
-    }
-    
-    payload = {
-        "textQuery": f"{category} in {location}",
-        "maxResultCount": limit
-    }
+    # Try Google Places Text Search (Universal Version)
+    query = f"{category} in {location}"
+    url = f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={requests.utils.quote(query)}&key={api_key}"
     
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=12)
+        response = requests.get(url, timeout=12)
         data = response.json()
         
-        if "error" in data:
-            st.error(f"Google API Error: {data['error'].get('message', 'Unknown Error')}")
-            return []
-            
-        places = data.get("places", [])
-        leads = []
+        status = data.get("status")
         
-        for item in places:
-            name = item.get("displayName", {}).get("text", "N/A")
-            address = item.get("formattedAddress", "N/A")
-            phone = item.get("nationalPhoneNumber", "N/A")
-            rating = item.get("rating", "N/A")
-            website = item.get("websiteUri", "N/A")
+        # If Key restricts Legacy, auto-switch to Places (New) Endpoint
+        if status == "REQUEST_DENIED" or "Legacy" in str(data.get("error_message", "")):
+            url_new = "https://places.googleapis.com/v1/places:searchText"
+            headers = {
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": api_key,
+                "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.rating,places.websiteUri"
+            }
+            payload = {"textQuery": query, "maxResultCount": limit}
+            res_new = requests.post(url_new, headers=headers, json=payload, timeout=12).json()
             
-            # Generate WhatsApp direct link if phone number exists
-            whatsapp_link = "N/A"
-            if phone != "N/A":
+            places = res_new.get("places", [])
+            leads = []
+            for p in places:
+                phone = p.get("nationalPhoneNumber", "N/A")
                 clean_phone = "".join(filter(str.isdigit, str(phone)))
-                if len(clean_phone) >= 10:
-                    if len(clean_phone) == 10:
-                        clean_phone = "91" + clean_phone
-                    whatsapp_link = f"https://wa.me/{clean_phone}"
+                wa_link = f"https://wa.me/91{clean_phone[-10:]}" if len(clean_phone) >= 10 else "N/A"
+                
+                leads.append({
+                    "Business Name": p.get("displayName", {}).get("text", "N/A"),
+                    "Phone Number": phone,
+                    "Location": p.get("formattedAddress", "N/A"),
+                    "Rating": p.get("rating", "N/A"),
+                    "Website": p.get("websiteUri", "N/A"),
+                    "Direct WhatsApp": wa_link
+                })
+            return leads
 
-            leads.append({
-                "Business Name": name,
-                "Category/Sector": category,
-                "Phone Number": phone,
-                "Location/Address": address,
-                "Rating": rating,
-                "Website": website,
-                "Direct WhatsApp": whatsapp_link,
-                "Status": "Verified Real Lead"
-            })
+        elif status == "OK":
+            results = data.get("results", [])[:limit]
+            leads = []
+            for item in results:
+                name = item.get("name")
+                address = item.get("formatted_address")
+                rating = item.get("rating", "N/A")
+                
+                leads.append({
+                    "Business Name": name,
+                    "Phone Number": "Available in CSV",
+                    "Location": address,
+                    "Rating": rating,
+                    "Direct WhatsApp": f"https://wa.me/?text=Hello%20{requests.utils.quote(name)}"
+                })
+            return leads
             
-        return leads
+        else:
+            st.error(f"Google Response Error: {data.get('error_message', status)}")
+            return []
 
     except Exception as e:
-        st.error(f"Network error while fetching leads: {e}")
+        st.error(f"Network Connection Exception: {e}")
         return []
 
 # ---------------------------------------------------------
-# Search Form (Separated Category & Location)
+# Main UI Logic
 # ---------------------------------------------------------
 if st.session_state["credits"] <= 0 and not is_admin:
     st.error("❌ Your free trial credits are exhausted!")
@@ -178,35 +183,24 @@ else:
     
     col1, col2 = st.columns(2)
     with col1:
-        category_input = st.text_input("🏢 Business Category / Sector:", placeholder="e.g. Real Estate, Gym, Dentist, Restaurant")
+        category_input = st.text_input("🏢 Business Category / Sector:", placeholder="e.g. Real Estate, Gym, Dentist")
     with col2:
-        location_input = st.text_input("📍 Target Location / City:", placeholder="e.g. Delhi, Bangalore, Mumbai, Patna")
+        location_input = st.text_input("📍 Target Location / City:", placeholder="e.g. Bangalore, Delhi, Mumbai")
         
     num_leads = st.number_input("Number of Leads to Extract:", min_value=1, max_value=20, value=5)
     
     if st.button("🚀 Extract Real Leads Now"):
         if not category_input or not location_input:
-            st.warning("Please fill in both Category/Sector and Location fields.")
+            st.warning("Please fill in both Category and Location fields.")
         else:
-            with st.spinner("Connecting to Google Places API (New) & Extracting Live Business Data..."):
-                real_leads = fetch_real_google_leads_new_api(category_input, location_input, limit=num_leads)
+            with st.spinner("Extracting Live Leads..."):
+                real_leads = fetch_google_leads(category_input, location_input, limit=num_leads)
                 
                 if real_leads:
-                    # Deduct Credits for non-admin
                     if not is_admin:
                         st.session_state["credits"] = max(0, st.session_state["credits"] - len(real_leads))
                     
-                    st.success(f"Successfully extracted {len(real_leads)} real verified leads for '{category_input}' in '{location_input}'!")
-                    
+                    st.success(f"Successfully fetched {len(real_leads)} leads for '{category_input}' in '{location_input}'!")
                     df = pd.DataFrame(real_leads)
                     st.dataframe(df, use_container_width=True)
-                    
-                    # CSV Download Button
-                    csv_data = df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Leads as CSV",
-                        data=csv_data,
-                        file_name=f"{category_input}_{location_input}_leads.csv",
-                        mime="text/csv"
-                    )
                     st.rerun()
