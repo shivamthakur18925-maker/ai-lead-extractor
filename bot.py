@@ -179,7 +179,7 @@ def fetch_single_chunk(category, location, chunk_size, offset=0):
 
     STRICT INTERNATIONAL CRITERIA:
     1. Business Name: Real active firm/company in '{category}'.
-    2. Full Address/Location: Complete local address.
+    2. Full Address/Location: Complete local address without extra commas or special linebreaks.
     3. Phone Number: Complete International Format with Country Code (e.g. +91 for India, +1 for USA/Canada, +44 for UK, +971 for UAE). DO NOT provide landlines without area codes or incomplete digits.
     4. Email Address: Valid contact or corporate email address.
     5. Instagram Handle: Verified active Instagram profile related to '{category}' or 'N/A' if irrelevant.
@@ -261,7 +261,7 @@ def extract_high_capacity_leads(category, location, total_limit):
     return all_leads[:total_limit]
 
 # ---------------------------------------------------------
-# Main UI & Pricing Flow
+# Main UI & Download Optimization Engine
 # ---------------------------------------------------------
 st.subheader("🔍 Search & Extract Global B2B Leads")
 
@@ -367,6 +367,7 @@ if st.button("🚀 Extract Real Leads Now"):
                 st.success(f"🎉 Successfully Extracted {extracted_count} Verified B2B Leads for '{category_in}' in '{location_in}'!")
                 
                 df = pd.DataFrame(results)
+                # Clean 1, 2, 3 indexing
                 df.index = range(1, len(df) + 1)
                 
                 st.dataframe(
@@ -378,10 +379,12 @@ if st.button("🚀 Extract Real Leads Now"):
                     use_container_width=True
                 )
                 
-                csv = df.to_csv(index=False).encode('utf-8')
+                # Optimized File Download Formatting (Formatted Serial No + UTF-8 BOM for Excel/Notepad Alignment)
+                csv_bytes = df.to_csv(index=True, index_label="S.No.", lineterminator='\r\n').encode('utf-8-sig')
+                
                 st.download_button(
                     label=f"📥 Download {extracted_count} Leads as CSV File",
-                    data=csv,
+                    data=csv_bytes,
                     file_name=f"{category_in}_{location_in}_leads.csv",
                     mime="text/csv"
                 )
