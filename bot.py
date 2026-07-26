@@ -111,6 +111,58 @@ def is_valid_email(email):
     return True
 
 # ---------------------------------------------------------
+# Smart Global WhatsApp Number Filter Engine
+# ---------------------------------------------------------
+def generate_global_wa_link(phone_str):
+    if not phone_str or phone_str == "N/A":
+        return "N/A"
+        
+    clean_digits = re.sub(r'\D', '', str(phone_str))
+    
+    # Ignore invalid or too short numbers
+    if len(clean_digits) < 8:
+        return "N/A"
+        
+    # 1. India Filter (+91)
+    if clean_digits.startswith("91") and len(clean_digits) == 12:
+        mobile_part = clean_digits[2:]
+        if mobile_part[0] in ['6', '7', '8', '9']:
+            return f"https://wa.me/{clean_digits}"
+        else:
+            return "N/A"  # Block Indian landlines (like 080...)
+            
+    elif len(clean_digits) == 10 and clean_digits[0] in ['6', '7', '8', '9']:
+        return f"https://wa.me/91{clean_digits}"
+        
+    # 2. USA / Canada Filter (+1)
+    elif clean_digits.startswith("1") and len(clean_digits) == 11:
+        area_code = clean_digits[1:4]
+        # Toll-free / Landline area codes in US/Canada
+        if area_code in ["800", "888", "877", "866", "855", "844", "833"]:
+            return "N/A"
+        return f"https://wa.me/{clean_digits}"
+        
+    # 3. UK Filter (+44) - UK Mobiles start with 7
+    elif clean_digits.startswith("44") and len(clean_digits) >= 11:
+        if clean_digits[2] == '7':
+            return f"https://wa.me/{clean_digits}"
+        else:
+            return "N/A"  # UK Landlines start with 1, 2, 3...
+            
+    # 4. UAE Filter (+971) - UAE Mobiles start with 5
+    elif clean_digits.startswith("971") and len(clean_digits) >= 11:
+        if clean_digits[3] == '5':
+            return f"https://wa.me/{clean_digits}"
+        else:
+            return "N/A"  # UAE Landlines start with 2, 3, 4, 6, 7, 9...
+            
+    # General Global Fallback for other countries (min 10 digits)
+    elif len(clean_digits) >= 10:
+        return f"https://wa.me/{clean_digits}"
+        
+    return "N/A"
+
+# ---------------------------------------------------------
 # Session State Management
 # ---------------------------------------------------------
 if "user_email" not in st.session_state:
@@ -177,10 +229,10 @@ def fetch_single_chunk(category, location, chunk_size, offset=0):
     Act as an elite Global B2B Data Extraction Specialist.
     Extract exactly {chunk_size} unique and verified B2B leads for category '{category}' in location '{location}' (Batch offset: {offset}).
 
-    STRICT INTERNATIONAL CRITERIA:
+    STRICT INTERNATIONAL CRITERIA FOR WHATSAPP VALIDATION:
     1. Business Name: Real active firm/company in '{category}'.
-    2. Full Address/Location: Complete local address without extra commas or special linebreaks.
-    3. Phone Number: Complete International Format with Country Code (e.g. +91 for India, +1 for USA/Canada, +44 for UK, +971 for UAE). DO NOT provide landlines without area codes or incomplete digits.
+    2. Full Address/Location: Complete local address without linebreaks.
+    3. Phone Number: Provide active direct MOBILE phone numbers in International format with country code (e.g., +91 for India, +1 for USA, +44 for UK, +971 for UAE). Avoid generic landlines, helpline numbers, or toll-free numbers.
     4. Email Address: Valid contact or corporate email address.
     5. Instagram Handle: Verified active Instagram profile related to '{category}' or 'N/A' if irrelevant.
 
@@ -214,9 +266,10 @@ def fetch_single_chunk(category, location, chunk_size, offset=0):
             chunk_results = []
             for item in leads_json:
                 phone = str(item.get("phone", "N/A")).strip()
-                clean_phone = re.sub(r'\D', '', phone)
                 
-                wa_link = f"https://wa.me/{clean_phone}" if len(clean_phone) >= 8 else "N/A"
+                # Smart Global WhatsApp Link Generator (Filters Landlines globally)
+                wa_link = generate_global_wa_link(phone)
+
                 insta = item.get("instagram", "N/A")
                 insta_link = f"https://instagram.com/{str(insta).replace('@', '').strip()}" if insta and insta != "N/A" else "N/A"
 
@@ -367,7 +420,6 @@ if st.button("🚀 Extract Real Leads Now"):
                 st.success(f"🎉 Successfully Extracted {extracted_count} Verified B2B Leads for '{category_in}' in '{location_in}'!")
                 
                 df = pd.DataFrame(results)
-                # Clean 1, 2, 3 indexing
                 df.index = range(1, len(df) + 1)
                 
                 st.dataframe(
@@ -379,7 +431,6 @@ if st.button("🚀 Extract Real Leads Now"):
                     use_container_width=True
                 )
                 
-                # Optimized File Download Formatting (Formatted Serial No + UTF-8 BOM for Excel/Notepad Alignment)
                 csv_bytes = df.to_csv(index=True, index_label="S.No.", lineterminator='\r\n').encode('utf-8-sig')
                 
                 st.download_button(
