@@ -119,7 +119,6 @@ def generate_global_wa_link(phone_str):
         
     clean_digits = re.sub(r'\D', '', str(phone_str))
     
-    # Ignore invalid or too short numbers
     if len(clean_digits) < 8:
         return "N/A"
         
@@ -129,7 +128,7 @@ def generate_global_wa_link(phone_str):
         if mobile_part[0] in ['6', '7', '8', '9']:
             return f"https://wa.me/{clean_digits}"
         else:
-            return "N/A"  # Block Indian landlines (like 080...)
+            return "N/A"  # Block Indian landlines (080...)
             
     elif len(clean_digits) == 10 and clean_digits[0] in ['6', '7', '8', '9']:
         return f"https://wa.me/91{clean_digits}"
@@ -137,26 +136,25 @@ def generate_global_wa_link(phone_str):
     # 2. USA / Canada Filter (+1)
     elif clean_digits.startswith("1") and len(clean_digits) == 11:
         area_code = clean_digits[1:4]
-        # Toll-free / Landline area codes in US/Canada
         if area_code in ["800", "888", "877", "866", "855", "844", "833"]:
             return "N/A"
         return f"https://wa.me/{clean_digits}"
         
-    # 3. UK Filter (+44) - UK Mobiles start with 7
+    # 3. UK Filter (+44)
     elif clean_digits.startswith("44") and len(clean_digits) >= 11:
         if clean_digits[2] == '7':
             return f"https://wa.me/{clean_digits}"
         else:
-            return "N/A"  # UK Landlines start with 1, 2, 3...
+            return "N/A"
             
-    # 4. UAE Filter (+971) - UAE Mobiles start with 5
+    # 4. UAE Filter (+971)
     elif clean_digits.startswith("971") and len(clean_digits) >= 11:
         if clean_digits[3] == '5':
             return f"https://wa.me/{clean_digits}"
         else:
-            return "N/A"  # UAE Landlines start with 2, 3, 4, 6, 7, 9...
+            return "N/A"
             
-    # General Global Fallback for other countries (min 10 digits)
+    # General Global Fallback
     elif len(clean_digits) >= 10:
         return f"https://wa.me/{clean_digits}"
         
@@ -229,12 +227,14 @@ def fetch_single_chunk(category, location, chunk_size, offset=0):
     Act as an elite Global B2B Data Extraction Specialist.
     Extract exactly {chunk_size} unique and verified B2B leads for category '{category}' in location '{location}' (Batch offset: {offset}).
 
-    STRICT INTERNATIONAL CRITERIA FOR WHATSAPP VALIDATION:
+    STRICT QUALITY & SOCIAL FILTERS:
     1. Business Name: Real active firm/company in '{category}'.
     2. Full Address/Location: Complete local address without linebreaks.
-    3. Phone Number: Provide active direct MOBILE phone numbers in International format with country code (e.g., +91 for India, +1 for USA, +44 for UK, +971 for UAE). Avoid generic landlines, helpline numbers, or toll-free numbers.
+    3. Phone Number: Provide active direct MOBILE phone numbers with country code (e.g., +91 for India, +1 for USA, +44 for UK, +971 for UAE). Avoid landlines or helpline numbers.
     4. Email Address: Valid contact or corporate email address.
-    5. Instagram Handle: Verified active Instagram profile related to '{category}' or 'N/A' if irrelevant.
+    5. Instagram Profile Rules: 
+       - Prioritize businesses that have an active Instagram account with a strong community presence (aiming for ~2,000+ followers or active niche content related specifically to '{category}' like photos/reels/videos of their products/services).
+       - If the business is in a non-social sector or does not have a verified active profile with relevant category posts, return 'N/A' (do NOT provide dummy handles).
 
     Return ONLY a raw JSON array of objects with exact keys:
     "business_name", "address", "phone", "email", "instagram"
@@ -266,19 +266,32 @@ def fetch_single_chunk(category, location, chunk_size, offset=0):
             chunk_results = []
             for item in leads_json:
                 phone = str(item.get("phone", "N/A")).strip()
-                
-                # Smart Global WhatsApp Link Generator (Filters Landlines globally)
                 wa_link = generate_global_wa_link(phone)
 
                 insta = item.get("instagram", "N/A")
-                insta_link = f"https://instagram.com/{str(insta).replace('@', '').strip()}" if insta and insta != "N/A" else "N/A"
+                if insta and str(insta).strip().lower() not in ["n/a", "none", "null", ""]:
+                    clean_handle = str(insta).replace('@', '').strip()
+                    insta_link = f"https://instagram.com/{clean_handle}"
+                else:
+                    insta_link = "N/A"
+
+                email = str(item.get("email", "N/A")).strip()
+
+                # Lead Quality Scoring Tagging Logic
+                if wa_link != "N/A" and email != "N/A" and insta_link != "N/A":
+                    score_tag = "🟢 High Value Lead (Complete)"
+                elif wa_link != "N/A" and (email != "N/A" or insta_link != "N/A"):
+                    score_tag = "🟡 Medium Value Lead"
+                else:
+                    score_tag = "⚪ Standard Lead"
 
                 chunk_results.append({
+                    "Lead Quality": score_tag,
                     "Business Name": item.get("business_name", "N/A"),
                     "Category": category.title(),
                     "Location": item.get("address", "N/A"),
                     "Phone Number": phone,
-                    "Email Address": item.get("email", "N/A"),
+                    "Email Address": email,
                     "Direct WhatsApp": wa_link,
                     "Instagram Profile": insta_link,
                     "Status": "Verified ✅"
@@ -440,9 +453,17 @@ if st.button("🚀 Extract Real Leads Now"):
                     mime="text/csv"
                 )
 
+                # AI Outreach Pitch Section (WhatsApp + Email Cold Pitch)
                 st.divider()
                 st.subheader("⚡ AI Cold Outreach Generator")
                 selected_biz = st.selectbox("Select Business to Generate Pitch:", df["Business Name"].tolist())
-                if st.button("✨ Generate AI WhatsApp Pitch"):
-                    pitch = f"Hello {selected_biz} Team,\nWe came across your profile in {category_in} sector and would love to collaborate to boost your business sales and leads. Let us know if you're open for a quick chat!\nBest Regards."
-                    st.text_area("Ready Message Pitch:", pitch, height=120)
+                
+                pitch_tab1, pitch_tab2 = st.tabs(["💬 WhatsApp Sales Pitch", "📧 Professional Email Pitch"])
+                
+                with pitch_tab1:
+                    wa_pitch = f"Hello {selected_biz} Team,\nWe came across your active profile in {category_in} sector in {location_in} and were really impressed with your business! We help brands in {category_in} scale their sales with AI & targeted marketing. Let us know if you'd be open for a quick chat!\nBest Regards."
+                    st.text_area("Ready WhatsApp Message Pitch:", wa_pitch, height=120)
+                    
+                with pitch_tab2:
+                    email_pitch = f"Subject: Partnership & Growth Proposal for {selected_biz}\n\nDear {selected_biz} Management,\n\nI hope this email finds you well. I was reviewing top businesses in the {category_in} sector across {location_in} and found your brand to be highly engaging.\n\nWe specialize in automating customer acquisition and B2B growth pipelines specifically tailored for {category_in} companies. Would you be open to a 10-minute call this week to discuss how we can drive more direct customers to your business?\n\nLooking forward to hearing from you.\n\nBest regards,\nGrowth Team"
+                    st.text_area("Ready Email Cold Pitch:", email_pitch, height=180)
