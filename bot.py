@@ -5,14 +5,13 @@ import pandas as pd
 import re
 
 # ---------------------------------------------------------
-# Page Configuration & Custom CSS
+# Page Configuration & Styling
 # ---------------------------------------------------------
-st.set_page_config(page_title="AI Lead Extractor Pro", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="AI Lead Extractor Pro (Global)", page_icon="🌐", layout="wide")
 
-st.title("🚀 AI Lead Extractor Pro")
-st.caption("Ultra-Fast B2B Lead Extraction & AI Outreach Engine")
+st.title("🌐 AI Lead Extractor Pro (Global Edition)")
+st.caption("Ultra-Fast Verified B2B Lead Extraction for Worldwide Markets")
 
-# Custom Styling for Index and UI
 st.markdown("""
 <style>
     .stDataFrame { border-radius: 10px; overflow: hidden; }
@@ -21,20 +20,43 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# Security & Email Constraints
+# Security & Temp-Mail Enforcement (Global Strict Block)
 # ---------------------------------------------------------
 ADMIN_EMAILS = ["shivamthakur18925@gmail.com"]
-BLOCKED_DOMAINS = [
-    "tempmail.com", "yopmail.com", "guerrillamail.com", "gwshare.com", 
-    "mailinator.com", "trashmail.com", "10minutemail.com", "dispostable.com"
+
+# Trusted Global Public Domains
+TRUSTED_DOMAINS = [
+    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", 
+    "icloud.com", "protonmail.com", "live.com", "zoho.com", "aol.com"
 ]
 
-def is_temp_email(email):
+# Known Temp-Mail and Disposable Keywords
+BLOCKED_KEYWORDS = [
+    "temp", "trash", "disposable", "guerrilla", "mailinator", 
+    "yopmail", "kierko", "gwshare", "10minute", "fake", "burner",
+    "sharklasers", "getairmail", "throwaway"
+]
+
+def is_valid_email(email):
     email = email.strip().lower()
     if "@" not in email:
-        return True
-    domain = email.split("@")[-1]
-    return any(b in domain for b in BLOCKED_DOMAINS)
+        return False
+    
+    parts = email.split("@")
+    if len(parts) != 2:
+        return False
+        
+    domain = parts[1]
+    
+    # Block any domain containing temporary keywords
+    if any(key in domain for key in BLOCKED_KEYWORDS):
+        return False
+        
+    # Check domain extension validity
+    if "." not in domain or len(domain.split(".")[-1]) < 2:
+        return False
+        
+    return True
 
 # ---------------------------------------------------------
 # Session State Management
@@ -45,17 +67,17 @@ if "credits" not in st.session_state:
     st.session_state["credits"] = 30
 
 # ---------------------------------------------------------
-# Login System
+# Strict Login System
 # ---------------------------------------------------------
 if not st.session_state["user_email"]:
-    st.subheader("🔑 Access Lead Extractor Engine")
-    email_input = st.text_input("Enter your official Email Address:", placeholder="name@company.com")
+    st.subheader("🔑 Access Verified Global Lead Engine")
+    email_input = st.text_input("Enter your official Email Address:", placeholder="name@company.com or name@gmail.com")
     
-    if st.button("Start Using Tool"):
+    if st.button("Start Using Extractor"):
         if not email_input:
             st.error("Please enter a valid email address.")
-        elif is_temp_email(email_input):
-            st.error("⚠️ Temporary / Disposable emails are strictly restricted!")
+        elif not is_valid_email(email_input):
+            st.error("⚠️ Temporary/Disposable emails (e.g. kierko.com, tempmail) are strictly restricted!")
         else:
             cleaned_email = email_input.strip().lower()
             st.session_state["user_email"] = cleaned_email
@@ -76,7 +98,7 @@ else:
 st.divider()
 
 # ---------------------------------------------------------
-# Groq Key Selector
+# Groq API Key Selector
 # ---------------------------------------------------------
 def get_groq_key():
     for i in range(1, 7):
@@ -89,7 +111,7 @@ def get_groq_key():
     return st.secrets.get("GROQ_API_KEY", None)
 
 # ---------------------------------------------------------
-# Groq AI Data Engine
+# Global Verified B2B AI Data Engine
 # ---------------------------------------------------------
 def extract_leads_via_groq(category, location, limit=5):
     groq_key = get_groq_key()
@@ -99,15 +121,16 @@ def extract_leads_via_groq(category, location, limit=5):
         return None
 
     prompt = f"""
-    Act as a professional B2B Data Extractor.
-    Extract exactly {limit} real or highly accurate verified B2B leads for category '{category}' in location '{location}'.
+    Act as a Global B2B Lead Extraction Specialist and Auditor.
+    Extract exactly {limit} VERIFIED B2B leads for category '{category}' in location '{location}'.
 
-    For each business, provide:
-    1. Business Name
-    2. Full Address/Location
-    3. Contact Phone Number (Indian format +91 if in India)
-    4. Official Email Address
-    5. Instagram Username/Handle (e.g. @business_name)
+    CRITICAL INSTRUCTIONS FOR GLOBAL ACCURACY:
+    1. Business Name: Must be a legitimate, active B2B business or service provider in '{category}'.
+    2. Phone Number: Provide full valid International Phone Number with country code format (e.g., +91 for India, +1 for USA/Canada, +44 for UK, +971 for UAE). DO NOT give incomplete digits or generic helpline numbers.
+    3. Instagram Handle:
+       - For social-heavy businesses (Real Estate, Gyms, Restaurants, Agencies), select verified business profiles (aim for active accounts with relevant bio and posts).
+       - For industrial/B2B suppliers where Instagram is rare, provide 'N/A' rather than a fake or random personal account.
+    4. Email Address: Valid corporate/official email address.
 
     Return ONLY a raw JSON array of objects with keys:
     "business_name", "address", "phone", "email", "instagram"
@@ -122,7 +145,7 @@ def extract_leads_via_groq(category, location, limit=5):
     payload = {
         "model": "llama-3.3-70b-versatile",
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2
+        "temperature": 0.1
     }
 
     try:
@@ -136,12 +159,13 @@ def extract_leads_via_groq(category, location, limit=5):
             
             formatted_leads = []
             for item in leads_json[:limit]:
-                phone = item.get("phone", "N/A")
-                clean_phone = re.sub(r'\D', '', str(phone))
+                phone = str(item.get("phone", "N/A")).strip()
+                clean_phone = re.sub(r'\D', '', phone)
                 
+                # Global WhatsApp Link Generation
                 wa_link = "N/A"
-                if len(clean_phone) >= 10:
-                    wa_link = f"https://wa.me/91{clean_phone[-10:]}"
+                if len(clean_phone) >= 8:
+                    wa_link = f"https://wa.me/{clean_phone}"
 
                 insta = item.get("instagram", "N/A")
                 insta_link = "N/A"
@@ -150,7 +174,6 @@ def extract_leads_via_groq(category, location, limit=5):
                     insta_link = f"https://instagram.com/{clean_insta}"
 
                 email = item.get("email", "N/A")
-                mail_link = f"mailto:{email}" if email != "N/A" else "N/A"
 
                 formatted_leads.append({
                     "Business Name": item.get("business_name", "N/A"),
@@ -170,40 +193,39 @@ def extract_leads_via_groq(category, location, limit=5):
         st.error(f"Execution Error: {e}")
         return None
 
-# AI Sales Message Generator Tool
+# AI Sales Pitch Generator
 def generate_pitch(category, biz_name):
-    return f"Hello {biz_name} Team,\nWe noticed your business in {category} sector and would love to collaborate to boost your digital presence and sales. Let us know if you're open for a quick chat!\nBest Regards."
+    return f"Hello {biz_name} Team,\nWe came across your profile in the {category} space and would love to connect to discuss potential synergy and growth opportunities. Let us know if you'd be open to a quick chat!\nBest Regards."
 
 # ---------------------------------------------------------
 # Main UI Inputs
 # ---------------------------------------------------------
-st.subheader("🔍 Search & Extract B2B Leads")
+st.subheader("🔍 Search & Extract Global B2B Leads")
 
 col1, col2 = st.columns(2)
 with col1:
-    category_in = st.text_input("🏢 Business Sector/Category:", placeholder="e.g. Gym, Real Estate, Restaurant")
+    category_in = st.text_input("🏢 Business Sector/Category:", placeholder="e.g. Real Estate, Gym, Software, Supplier")
 with col2:
-    location_in = st.text_input("📍 Target City/Location:", placeholder="e.g. Patna, Bangalore, Delhi")
+    location_in = st.text_input("📍 Target City/Country:", placeholder="e.g. London, New York, Dubai, Mumbai")
 
 num_leads = st.number_input("Number of Leads to Extract:", min_value=1, max_value=20, value=5)
 
 if st.button("🚀 Extract Real Leads Now"):
     if not category_in or not location_in:
-        st.warning("Please fill both Business Category and Location.")
+        st.warning("Please enter both Business Category and Location.")
     elif not is_admin and st.session_state["credits"] < num_leads:
-        st.error("⚠️ Insufficient Credits! Please upgrade or contact administrator.")
+        st.error("⚠️ Insufficient Credits! Please contact administrator for more credits.")
     else:
-        with st.spinner("Extracting Leads via Groq AI Engine..."):
+        with st.spinner("Extracting & Auditing Global Leads..."):
             results = extract_leads_via_groq(category_in, location_in, limit=num_leads)
             
             if results:
                 if not is_admin:
                     st.session_state["credits"] = max(0, st.session_state["credits"] - len(results))
                 
-                st.success(f"Extracted {len(results)} Verified Leads for '{category_in}' in '{location_in}'!")
+                st.success(f"Successfully Extracted {len(results)} Verified Leads for '{category_in}' in '{location_in}'!")
                 
                 df = pd.DataFrame(results)
-                # Fix Indexing starting from 1 instead of 0
                 df.index = range(1, len(df) + 1)
                 
                 st.dataframe(
@@ -224,15 +246,10 @@ if st.button("🚀 Extract Real Leads Now"):
                     mime="text/csv"
                 )
 
-                # ---------------------------------------------------------
-                # BONUS FEATURE: AI WhatsApp Outreach Pitch Generator
-                # ---------------------------------------------------------
+                # Outreach Pitch Feature
                 st.divider()
-                st.subheader("⚡ AI Cold Outreach Generator (Bonus Feature)")
-                st.caption("Generate instant high-converting WhatsApp pitches for extracted leads.")
-                
-                selected_biz = st.selectbox("Select Business to Generate Pitch:", df["Business Name"].tolist())
-                if st.button("✨ Generate AI WhatsApp Pitch"):
+                st.subheader("⚡ AI Cold Outreach Generator")
+                selected_biz = st.selectbox("Select Business to Generate Outreach Message:", df["Business Name"].tolist())
+                if st.button("✨ Generate AI Outreach Pitch"):
                     pitch = generate_pitch(category_in, selected_biz)
-                    st.text_area("Ready WhatsApp Message Pitch:", pitch, height=120)
-                    st.info("💡 Copy this pitch and send directly via the WhatsApp Chat link above!")
+                    st.text_area("Ready Message Pitch:", pitch, height=120)
