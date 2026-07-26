@@ -2,7 +2,6 @@ import streamlit as st
 import requests
 import pandas as pd
 import json
-import re
 
 # ---------------------------------------------------------
 # Page Configuration & Title
@@ -10,14 +9,14 @@ import re
 st.set_page_config(page_title="AI Lead Extractor Pro", page_icon="🚀", layout="wide")
 
 st.title("🚀 AI Lead Extractor Pro")
-st.caption("Extract verified real-time B2B business leads powered by Google Places & AI")
+st.caption("Extract verified real-time B2B business leads powered by Google Places API (New) & AI")
 
 # ---------------------------------------------------------
 # Admin & Security Configuration
 # ---------------------------------------------------------
 ADMIN_EMAILS = ["shivamthakur18925@gmail.com"]
 
-# Comprehensive Temp Mail Domain Blocklist
+# Disposable / Temp Mail Domain Blocklist
 BLOCKED_TEMP_DOMAINS = [
     "tempmail.com", "yopmail.com", "guerrillamail.com", "10minutemail.com",
     "gwshare.com", "mailinator.com", "trashmail.com", "dispostable.com",
@@ -35,7 +34,7 @@ def is_temp_email(email):
     return False
 
 # ---------------------------------------------------------
-# Session State & Credit Management
+# Session State Management
 # ---------------------------------------------------------
 if "user_email" not in st.session_state:
     st.session_state["user_email"] = None
@@ -48,8 +47,6 @@ if "credits" not in st.session_state:
 # ---------------------------------------------------------
 if not st.session_state["user_email"]:
     st.subheader("🔑 Login to Access Lead Extractor")
-    
-    # Simple Device Fingerprint Check warning
     st.info("👋 Enter your permanent business or personal email to claim 30 Free Trial Credits.")
     
     email_input = st.text_input("Enter Email Address:", placeholder="name@company.com")
@@ -86,10 +83,9 @@ with col_b:
 st.divider()
 
 # ---------------------------------------------------------
-# API Key Fetching (From Streamlit Secrets / Environment)
+# API Key Fetching (From Streamlit Secrets)
 # ---------------------------------------------------------
 def get_places_api_key():
-    # Try fetching from secrets
     try:
         for i in range(1, 7):
             key = st.secrets.get(f"PLACES_API_KEY_{i}")
@@ -100,46 +96,56 @@ def get_places_api_key():
     return None
 
 # ---------------------------------------------------------
-# Real Google Places Lead Extraction Logic
+# Google Places API (New) Lead Extraction Logic
 # ---------------------------------------------------------
-def fetch_real_google_leads(category, location, limit=10):
+def fetch_real_google_leads_new_api(category, location, limit=10):
     api_key = get_places_api_key()
     
     if not api_key:
-        st.warning("⚠️ Google Places API Key not found or invalid in Secrets. Please check your Secrets configuration.")
+        st.error("⚠️ Google Places API Key not found in Secrets. Please check your configuration.")
         return []
 
-    query = f"{category} in {location}"
-    url = f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={requests.utils.quote(query)}&key={api_key}"
+    # Places API (New) Endpoint
+    url = "https://places.googleapis.com/v1/places:searchText"
+    
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": "places.displayName,places.formattedAddress,places.nationalPhoneNumber,places.rating,places.websiteUri"
+    }
+    
+    payload = {
+        "textQuery": f"{category} in {location}",
+        "maxResultCount": limit
+    }
     
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.post(url, headers=headers, json=payload, timeout=12)
         data = response.json()
         
-        if data.get("status") != "OK":
-            st.error(f"Google API Error: {data.get('error_message', data.get('status'))}")
+        if "error" in data:
+            st.error(f"Google API Error: {data['error'].get('message', 'Unknown Error')}")
             return []
             
-        results = data.get("results", [])[:limit]
+        places = data.get("places", [])
         leads = []
         
-        for item in results:
-            place_id = item.get("place_id")
-            name = item.get("name")
-            address = item.get("formatted_address")
+        for item in places:
+            name = item.get("displayName", {}).get("text", "N/A")
+            address = item.get("formattedAddress", "N/A")
+            phone = item.get("nationalPhoneNumber", "N/A")
             rating = item.get("rating", "N/A")
+            website = item.get("websiteUri", "N/A")
             
-            # Fetch Place Details for Phone Number
-            phone = "N/A"
-            website = "N/A"
-            if place_id:
-                details_url = f"https://maps.googleapis.com/maps/api/place/details/json?place_id={place_id}&fields=formatted_phone_number,website&key={api_key}"
-                d_res = requests.get(details_url, timeout=5).json()
-                if d_res.get("status") == "OK":
-                    res_det = d_res.get("result", {})
-                    phone = res_det.get("formatted_phone_number", "N/A")
-                    website = res_det.get("website", "N/A")
-            
+            # Generate WhatsApp direct link if phone number exists
+            whatsapp_link = "N/A"
+            if phone != "N/A":
+                clean_phone = "".join(filter(str.isdigit, str(phone)))
+                if len(clean_phone) >= 10:
+                    if len(clean_phone) == 10:
+                        clean_phone = "91" + clean_phone
+                    whatsapp_link = f"https://wa.me/{clean_phone}"
+
             leads.append({
                 "Business Name": name,
                 "Category/Sector": category,
@@ -147,13 +153,14 @@ def fetch_real_google_leads(category, location, limit=10):
                 "Location/Address": address,
                 "Rating": rating,
                 "Website": website,
+                "Direct WhatsApp": whatsapp_link,
                 "Status": "Verified Real Lead"
             })
             
         return leads
 
     except Exception as e:
-        st.error(f"Network error while fetching real leads: {e}")
+        st.error(f"Network error while fetching leads: {e}")
         return []
 
 # ---------------------------------------------------------
@@ -173,7 +180,7 @@ else:
     with col1:
         category_input = st.text_input("🏢 Business Category / Sector:", placeholder="e.g. Real Estate, Gym, Dentist, Restaurant")
     with col2:
-        location_input = st.text_input("📍 Target Location / City:", placeholder="e.g. Delhi, Mumbai, Patna, New York")
+        location_input = st.text_input("📍 Target Location / City:", placeholder="e.g. Delhi, Bangalore, Mumbai, Patna")
         
     num_leads = st.number_input("Number of Leads to Extract:", min_value=1, max_value=20, value=5)
     
@@ -181,8 +188,8 @@ else:
         if not category_input or not location_input:
             st.warning("Please fill in both Category/Sector and Location fields.")
         else:
-            with st.spinner("Connecting to Google Maps & Extracting Live Business Data..."):
-                real_leads = fetch_real_google_leads(category_input, location_input, limit=num_leads)
+            with st.spinner("Connecting to Google Places API (New) & Extracting Live Business Data..."):
+                real_leads = fetch_real_google_leads_new_api(category_input, location_input, limit=num_leads)
                 
                 if real_leads:
                     # Deduct Credits for non-admin
