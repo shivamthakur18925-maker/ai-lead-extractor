@@ -1,7 +1,4 @@
 streamlit
-groq
-pandasstreamlit
-groq
-pandas
 requests
+pandas
 python-dotenv
