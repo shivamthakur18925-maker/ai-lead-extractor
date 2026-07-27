@@ -1,469 +1,232 @@
-import streamlit as st
-import requests
-import json
-import pandas as pd
-import re
 import os
+import re
+import json
+import requests
+import pandas as pd
+import streamlit as st
 
-# ---------------------------------------------------------
-# Page Configuration & Styling
-# ---------------------------------------------------------
-st.set_page_config(page_title="AI Lead Extractor Ultra Pro (Global)", page_icon="🌐", layout="wide")
+# ==========================================
+# Page Configuration
+# ==========================================
+st.set_page_config(
+    page_title="Global B2B AI Lead Extractor",
+    page_icon="⚡",
+    layout="wide"
+)
 
-st.title("🌐 AI Lead Extractor Ultra Pro (Global Edition)")
-st.caption("High-Capacity Unlimited Worldwide B2B Lead Extraction Engine")
-
+# Custom CSS for UI Enhancement
 st.markdown("""
-<style>
-    .stDataFrame { border-radius: 10px; overflow: hidden; }
-    .stButton>button { border-radius: 8px; font-weight: bold; background-color: #2563EB; color: white; }
-    .plan-card {
-        background-color: #1E293B;
-        padding: 20px;
-        border-radius: 15px;
-        border: 2px solid #3B82F6;
-        text-align: center;
-        color: white;
-        margin-bottom: 15px;
+    <style>
+    .main {
+        padding: 2rem;
     }
-    .discount-badge {
-        background-color: #10B981;
+    .stButton>button {
+        width: 100%;
+        border-radius: 8px;
+        height: 3em;
+        background-color: #FF4B4B;
         color: white;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 12px;
         font-weight: bold;
     }
-    .old-price {
-        text-decoration: line-through;
-        color: #9CA3AF;
-        font-size: 14px;
+    .metric-card {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-</style>
+    </style>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# Persistent Credit Database System (File-Based JSON)
-# ---------------------------------------------------------
-DB_FILE = "user_credits_db.json"
+# ==========================================
+# Groq API Key Resolver (Fixed for Render)
+# ==========================================
+def get_groq_key():
+    """
+    Safely retrieves the Groq API key prioritizing Environment Variables,
+    preventing StreamlitSecretNotFoundError on deployment platforms like Render.
+    """
+    # 1. Primary Check: Render Environment Variable
+    env_key = os.getenv("GROQ_API_KEY")
+    if env_key and len(env_key) > 10:
+        return env_key
 
-def load_db():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    # 2. Check multiple fallback environment keys
+    for i in range(1, 7):
+        k = os.getenv(f"GROQ_API_KEY_{i}")
+        if k and len(k) > 10:
+            return k
 
-def save_db(db):
+    # 3. Fallback Check: Streamlit Secrets (safely wrapped)
     try:
-        with open(DB_FILE, "w") as f:
-            json.dump(db, f, indent=4)
+        if hasattr(st, "secrets"):
+            for i in range(1, 7):
+                sec_k = st.secrets.get(f"GROQ_API_KEY_{i}")
+                if sec_k and len(sec_k) > 10:
+                    return sec_k
+            sec_default = st.secrets.get("GROQ_API_KEY", None)
+            if sec_default and len(sec_default) > 10:
+                return sec_default
     except Exception:
         pass
 
-def get_user_credits(email):
-    db = load_db()
-    if email in db:
-        return db[email]
-    else:
-        db[email] = 30
-        save_db(db)
-        return 30
+    return None
 
-def deduct_user_credits(email, amount):
-    db = load_db()
-    current = db.get(email, 30)
-    new_bal = max(0, current - amount)
-    db[email] = new_bal
-    save_db(db)
-    return new_bal
 
-# ---------------------------------------------------------
-# Security & Temp-Mail Enforcement
-# ---------------------------------------------------------
-ADMIN_EMAILS = ["shivamthakur18925@gmail.com"]
-
-BLOCKED_KEYWORDS = [
-    "temp", "trash", "disposable", "guerrilla", "mailinator", 
-    "yopmail", "kierko", "gwshare", "10minute", "fake", "burner",
-    "sharklasers", "getairmail", "throwaway", "fakemail", "crazymailing"
-]
-
-def is_valid_email(email):
-    email = email.strip().lower()
-    if "@" not in email:
-        return False
-    
-    parts = email.split("@")
-    if len(parts) != 2:
-        return False
-        
-    domain = parts[1]
-    
-    if any(key in domain for key in BLOCKED_KEYWORDS):
-        return False
-        
-    if "." not in domain or len(domain.split(".")[-1]) < 2:
-        return False
-        
-    return True
-
-# ---------------------------------------------------------
-# Smart Global WhatsApp Number Filter Engine
-# ---------------------------------------------------------
-def generate_global_wa_link(phone_str):
-    if not phone_str or phone_str == "N/A":
-        return "N/A"
-        
-    clean_digits = re.sub(r'\D', '', str(phone_str))
-    
-    if len(clean_digits) < 8:
-        return "N/A"
-        
-    # 1. India Filter (+91)
-    if clean_digits.startswith("91") and len(clean_digits) == 12:
-        mobile_part = clean_digits[2:]
-        if mobile_part[0] in ['6', '7', '8', '9']:
-            return f"https://wa.me/{clean_digits}"
-        else:
-            return "N/A"  # Block Indian landlines (080...)
-            
-    elif len(clean_digits) == 10 and clean_digits[0] in ['6', '7', '8', '9']:
-        return f"https://wa.me/91{clean_digits}"
-        
-    # 2. USA / Canada Filter (+1)
-    elif clean_digits.startswith("1") and len(clean_digits) == 11:
-        area_code = clean_digits[1:4]
-        if area_code in ["800", "888", "877", "866", "855", "844", "833"]:
-            return "N/A"
-        return f"https://wa.me/{clean_digits}"
-        
-    # 3. UK Filter (+44)
-    elif clean_digits.startswith("44") and len(clean_digits) >= 11:
-        if clean_digits[2] == '7':
-            return f"https://wa.me/{clean_digits}"
-        else:
-            return "N/A"
-            
-    # 4. UAE Filter (+971)
-    elif clean_digits.startswith("971") and len(clean_digits) >= 11:
-        if clean_digits[3] == '5':
-            return f"https://wa.me/{clean_digits}"
-        else:
-            return "N/A"
-            
-    # General Global Fallback
-    elif len(clean_digits) >= 10:
-        return f"https://wa.me/{clean_digits}"
-        
-    return "N/A"
-
-# ---------------------------------------------------------
-# Session State Management
-# ---------------------------------------------------------
-if "user_email" not in st.session_state:
-    st.session_state["user_email"] = None
-
-# ---------------------------------------------------------
-# Strict Login System
-# ---------------------------------------------------------
-if not st.session_state["user_email"]:
-    st.subheader("🔑 Access Global B2B Lead Extractor Engine")
-    email_input = st.text_input("Enter your official Email Address:", placeholder="name@company.com or name@gmail.com")
-    
-    if st.button("Start Extractor Engine"):
-        if not email_input:
-            st.error("Please enter a valid email address.")
-        elif not is_valid_email(email_input):
-            st.error("⚠️ Temporary / Disposable emails (e.g. kierko.com, tempmail) are strictly blocked!")
-        else:
-            cleaned_email = email_input.strip().lower()
-            st.session_state["user_email"] = cleaned_email
-            st.rerun()
-    st.stop()
-
-# Header Banner
-user_email = st.session_state["user_email"]
-is_admin = user_email in ADMIN_EMAILS
-
-if is_admin:
-    user_credits = 999999
-else:
-    user_credits = get_user_credits(user_email)
-
-c1, c2 = st.columns([3, 1])
-c1.write(f"Logged in as: **{user_email}**")
-if is_admin:
-    c2.success("👑 Admin Access (Unlimited)")
-else:
-    c2.info(f"⚡ Remaining Credits: {user_credits}")
-st.divider()
-
-# ---------------------------------------------------------
-# Groq API Key Selector
-# ---------------------------------------------------------
-def get_groq_key():
-    for i in range(1, 7):
-        try:
-            key = st.secrets.get(f"GROQ_API_KEY_{i}")
-            if key and len(key) > 10 and key.startswith("gsk_"):
-                return key
-        except Exception:
-            pass
-    return st.secrets.get("GROQ_API_KEY", None)
-
-# ---------------------------------------------------------
-# Global High-Capacity AI Data Engine
-# ---------------------------------------------------------
-def fetch_single_chunk(category, location, chunk_size, offset=0):
+# ==========================================
+# AI Data Extraction Engine
+# ==========================================
+def fetch_single_chunk(category, location, chunk_size, offset_index):
     groq_key = get_groq_key()
     if not groq_key:
-        st.error("❌ Groq API Key missing! Check Streamlit Secrets.")
+        st.error("❌ Groq API Key missing! Please set 'GROQ_API_KEY' in Render Environment Variables.")
         return []
 
     prompt = f"""
-    Act as an elite Global B2B Data Extraction Specialist.
-    Extract exactly {chunk_size} unique and verified B2B leads for category '{category}' in location '{location}' (Batch offset: {offset}).
+Act as an elite Global B2B Data Extraction Specialist.
+Extract exactly {chunk_size} unique and verified B2B business leads for:
+- Category: {category}
+- Location: {location}
+- Chunk Offset Batch: {offset_index}
 
-    STRICT QUALITY & SOCIAL FILTERS:
-    1. Business Name: Real active firm/company in '{category}'.
-    2. Full Address/Location: Complete local address without linebreaks.
-    3. Phone Number: Provide active direct MOBILE phone numbers with country code (e.g., +91 for India, +1 for USA, +44 for UK, +971 for UAE). Avoid landlines or helpline numbers.
-    4. Email Address: Valid contact or corporate email address.
-    5. Instagram Profile Rules: 
-       - Prioritize businesses that have an active Instagram account with a strong community presence (aiming for ~2,000+ followers or active niche content related specifically to '{category}' like photos/reels/videos of their products/services).
-       - If the business is in a non-social sector or does not have a verified active profile with relevant category posts, return 'N/A' (do NOT provide dummy handles).
+STRICT QUALITY & SOCIAL FILTERS:
+1. Business Name: Real active firm/company in '{location}'.
+2. Phone: Valid contact number with local/international format.
+3. Email: Official corporate or direct contact email address.
+4. Website: Complete website URL (e.g., https://example.com).
+5. Address: Complete physical or office address.
+6. Verification Status: High/Verified.
 
-    Return ONLY a raw JSON array of objects with exact keys:
-    "business_name", "address", "phone", "email", "instagram"
-    IMPORTANT: Ensure valid JSON with proper double quotes and escapings. Do not include markdown code block formatting or backticks.
-    """
+Respond ONLY with a valid raw JSON array containing exactly {chunk_size} JSON objects.
+Do not include markdown formatting like ```json or pre-texts.
+
+JSON Schema:
+[
+  {{
+    "Business Name": "Company Name",
+    "Category": "{category}",
+    "Location": "{location}",
+    "Phone": "+1 000 000 0000",
+    "Email": "info@company.com",
+    "Website": "[https://company.com](https://company.com)",
+    "Address": "Full Street Address",
+    "Status": "Verified"
+  }}
+]
+"""
 
     headers = {
         "Authorization": f"Bearer {groq_key}",
         "Content-Type": "application/json"
     }
-    
+
     payload = {
         "model": "llama-3.3-70b-versatile",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2
+        "messages": [
+            {"role": "system", "content": "You are a precise data extraction API that returns clean JSON arrays only."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.2,
+        "max_tokens": 4000
     }
 
     try:
-        response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=25)
+        response = requests.post(
+            "[https://api.groq.com/openai/v1/chat/completions](https://api.groq.com/openai/v1/chat/completions)",
+            headers=headers,
+            json=payload,
+            timeout=45
+        )
         if response.status_code == 200:
-            res_data = response.json()
-            raw_content = res_data['choices'][0]['message']['content'].strip()
-            
-            raw_content = re.sub(r'```json\s*|\s*```', '', raw_content)
-            raw_content = raw_content.replace("\\\\", "/").replace("\\", "/")
-            
-            leads_json = json.loads(raw_content)
-            
-            chunk_results = []
-            for item in leads_json:
-                phone = str(item.get("phone", "N/A")).strip()
-                wa_link = generate_global_wa_link(phone)
-
-                insta = item.get("instagram", "N/A")
-                if insta and str(insta).strip().lower() not in ["n/a", "none", "null", ""]:
-                    clean_handle = str(insta).replace('@', '').strip()
-                    insta_link = f"https://instagram.com/{clean_handle}"
-                else:
-                    insta_link = "N/A"
-
-                email = str(item.get("email", "N/A")).strip()
-
-                # Lead Quality Scoring Tagging Logic
-                if wa_link != "N/A" and email != "N/A" and insta_link != "N/A":
-                    score_tag = "🟢 High Value Lead (Complete)"
-                elif wa_link != "N/A" and (email != "N/A" or insta_link != "N/A"):
-                    score_tag = "🟡 Medium Value Lead"
-                else:
-                    score_tag = "⚪ Standard Lead"
-
-                chunk_results.append({
-                    "Lead Quality": score_tag,
-                    "Business Name": item.get("business_name", "N/A"),
-                    "Category": category.title(),
-                    "Location": item.get("address", "N/A"),
-                    "Phone Number": phone,
-                    "Email Address": email,
-                    "Direct WhatsApp": wa_link,
-                    "Instagram Profile": insta_link,
-                    "Status": "Verified ✅"
-                })
-            return chunk_results
+            content = response.json()["choices"][0]["message"]["content"].strip()
+            # Clean markdown code blocks if AI outputs them
+            cleaned = re.sub(r"^```json\s*", "", content, flags=re.MULTILINE)
+            cleaned = re.sub(r"^```\s*", "", cleaned, flags=re.MULTILINE)
+            cleaned = cleaned.strip()
+            return json.loads(cleaned)
         else:
+            st.warning(f"Batch request returned status code: {response.status_code}")
             return []
-    except Exception:
+    except Exception as e:
+        st.error(f"Extraction Error in batch processing: {str(e)}")
         return []
+
 
 def extract_high_capacity_leads(category, location, total_limit):
     all_leads = []
     chunk_size = 10
-    num_chunks = (total_limit + chunk_size - 1) // chunk_size
+    total_chunks = (total_limit + chunk_size - 1) // chunk_size
 
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    for i in range(num_chunks):
+    for i in range(total_chunks):
         current_req = min(chunk_size, total_limit - len(all_leads))
-        status_text.text(f"🚀 AI Chunk Extraction: Processing Batch {i+1} of {num_chunks} ({len(all_leads)}/{total_limit} Leads)...")
-        
-        chunk_data = fetch_single_chunk(category, location, current_req, offset=i*10)
-        if chunk_data:
-            all_leads.extend(chunk_data)
-        
-        progress_bar.progress(min(1.0, (i + 1) / num_chunks))
-        if len(all_leads) >= total_limit:
+        if current_req <= 0:
             break
 
-    status_text.empty()
+        status_text.text(f"🚀 AI Extraction Batch {i+1} of {total_chunks} ({len(all_leads)}/{total_limit} Leads)...")
+        chunk_data = fetch_single_chunk(category, location, current_req, i + 1)
+
+        if chunk_data and isinstance(chunk_data, list):
+            all_leads.extend(chunk_data)
+        
+        progress_bar.progress((i + 1) / total_chunks)
+
+    status_text.text("✅ Extraction Complete!")
     progress_bar.empty()
     return all_leads[:total_limit]
 
-# ---------------------------------------------------------
-# Main UI & Download Optimization Engine
-# ---------------------------------------------------------
-st.subheader("🔍 Search & Extract Global B2B Leads")
 
-col1, col2 = st.columns(2)
-with col1:
-    category_in = st.text_input("🏢 Business Sector/Category:", placeholder="e.g. Real Estate, Gym, Restaurant, Manufacturer")
-with col2:
-    location_in = st.text_input("📍 Target City/Country:", placeholder="e.g. Patna, Mumbai, London, Dubai, New York")
+# ==========================================
+# Main Streamlit Application UI
+# ==========================================
+def main():
+    st.title("⚡ Global B2B AI Lead Extractor")
+    st.markdown("Extract targeted, high-value business leads globally powered by ultra-fast Groq AI.")
 
-num_leads = st.number_input("Number of Leads to Extract (Supports High-Capacity 10 to 500+):", min_value=1, max_value=500, value=10)
+    st.divider()
 
-# Displays VIP Pricing Cards when credits hit 0 or in UI
-if user_credits <= 0 and not is_admin:
-    st.error("⚠️ 0 Credits Remaining! You have exhausted your free trial credits.")
-    
-    st.subheader("💎 Upgrade to VIP Plan & Unlock Unlimited B2B Leads")
-    
-    billing_cycle = st.radio("Select Billing Cycle:", ["Yearly Billing (🔥 Save ~20% Extra)", "Monthly Billing"], horizontal=True)
-    
-    col_p1, col_p2, col_p3 = st.columns(3)
-    
-    if "Yearly" in billing_cycle:
-        with col_p1:
-            st.markdown("""
-            <div class="plan-card">
-                <h3>🌱 Starter Yearly</h3>
-                <span class="discount-badge">SAVE 20%</span><br><br>
-                <span class="old-price">₹5,988 / year</span>
-                <h2>₹4,790 <small>/ year</small></h2>
-                <p>⚡ 100 Leads / Month</p>
-                <p>✅ CSV Export + WhatsApp Links</p>
-            </div>
-            """, unsafe_allow_html=True)
-        with col_p2:
-            st.markdown("""
-            <div class="plan-card" style="border-color: #10B981;">
-                <h3>⚡ Pro Business Yearly</h3>
-                <span class="discount-badge">POPULAR - SAVE 20%</span><br><br>
-                <span class="old-price">₹11,988 / year</span>
-                <h2 style="color: #10B981;">₹9,590 <small>/ year</small></h2>
-                <p>⚡ 1,000 Leads / Month</p>
-                <p>✅ 500+ Chunking + AI Pitcher</p>
-                <p>✅ Priority WhatsApp & Insta Links</p>
-            </div>
-            """, unsafe_allow_html=True)
-        with col_p3:
-            st.markdown("""
-            <div class="plan-card">
-                <h3>👑 Enterprise VIP Yearly</h3>
-                <span class="discount-badge">SAVE 20%</span><br><br>
-                <span class="old-price">₹29,988 / year</span>
-                <h2>₹23,990 <small>/ year</small></h2>
-                <p>⚡ Unlimited Leads / Month</p>
-                <p>✅ Dedicated API Key + Priority Support</p>
-            </div>
-            """, unsafe_allow_html=True)
-    else:
-        with col_p1:
-            st.markdown("""
-            <div class="plan-card">
-                <h3>🌱 Starter Monthly</h3>
-                <h2>₹499 <small>/ month</small></h2>
-                <p>⚡ 100 Leads / Month</p>
-                <p>✅ CSV Export + WhatsApp Links</p>
-            </div>
-            """, unsafe_allow_html=True)
-        with col_p2:
-            st.markdown("""
-            <div class="plan-card" style="border-color: #10B981;">
-                <h3>⚡ Pro Business Monthly</h3>
-                <h2 style="color: #10B981;">₹999 <small>/ month</small></h2>
-                <p>⚡ 1,000 Leads / Month</p>
-                <p>✅ 500+ Chunking + AI Pitcher</p>
-                <p>✅ Priority WhatsApp & Insta Links</p>
-            </div>
-            """, unsafe_allow_html=True)
-        with col_p3:
-            st.markdown("""
-            <div class="plan-card">
-                <h3>👑 Enterprise VIP Monthly</h3>
-                <h2>₹2,499 <small>/ month</small></h2>
-                <p>⚡ Unlimited Leads / Month</p>
-                <p>✅ Dedicated API Key + Priority Support</p>
-            </div>
-            """, unsafe_allow_html=True)
+    # Inputs Section
+    col1, col2, col3 = st.columns([2, 2, 1.5])
 
-    st.info("📞 **To activate your plan instantly, contact Administrator:** `shivamthakur18925@gmail.com`")
+    with col1:
+        category_in = st.text_input("🎯 Business Category", placeholder="e.g. IT Companies, Real Estate, Clinics")
 
-if st.button("🚀 Extract Real Leads Now"):
-    if not category_in or not location_in:
-        st.warning("Please fill both Business Category and Location.")
-    elif not is_admin and user_credits < num_leads:
-        st.error(f"⚠️ Insufficient Credits! You requested {num_leads} leads, but you only have {user_credits} credits left. Please adjust the count or upgrade.")
-    else:
-        with st.spinner(f"Extracting {num_leads} Verified B2B Leads across AI Data Nodes..."):
-            results = extract_high_capacity_leads(category_in, location_in, total_limit=num_leads)
-            
-            if results:
-                extracted_count = len(results)
-                if not is_admin:
-                    new_bal = deduct_user_credits(user_email, extracted_count)
-                
-                st.success(f"🎉 Successfully Extracted {extracted_count} Verified B2B Leads for '{category_in}' in '{location_in}'!")
-                
-                df = pd.DataFrame(results)
-                df.index = range(1, len(df) + 1)
-                
-                st.dataframe(
-                    df,
-                    column_config={
-                        "Direct WhatsApp": st.column_config.LinkColumn("WhatsApp", display_text="💬 Chat"),
-                        "Instagram Profile": st.column_config.LinkColumn("Instagram", display_text="📸 Profile")
-                    },
-                    use_container_width=True
-                )
-                
-                csv_bytes = df.to_csv(index=True, index_label="S.No.", lineterminator='\r\n').encode('utf-8-sig')
-                
-                st.download_button(
-                    label=f"📥 Download {extracted_count} Leads as CSV File",
-                    data=csv_bytes,
-                    file_name=f"{category_in}_{location_in}_leads.csv",
-                    mime="text/csv"
-                )
+    with col2:
+        location_in = st.text_input("📍 Location / City", placeholder="e.g. Dubai, New York, Mumbai")
 
-                # AI Outreach Pitch Section (WhatsApp + Email Cold Pitch)
-                st.divider()
-                st.subheader("⚡ AI Cold Outreach Generator")
-                selected_biz = st.selectbox("Select Business to Generate Pitch:", df["Business Name"].tolist())
-                
-                pitch_tab1, pitch_tab2 = st.tabs(["💬 WhatsApp Sales Pitch", "📧 Professional Email Pitch"])
-                
-                with pitch_tab1:
-                    wa_pitch = f"Hello {selected_biz} Team,\nWe came across your active profile in {category_in} sector in {location_in} and were really impressed with your business! We help brands in {category_in} scale their sales with AI & targeted marketing. Let us know if you'd be open for a quick chat!\nBest Regards."
-                    st.text_area("Ready WhatsApp Message Pitch:", wa_pitch, height=120)
-                    
-                with pitch_tab2:
-                    email_pitch = f"Subject: Partnership & Growth Proposal for {selected_biz}\n\nDear {selected_biz} Management,\n\nI hope this email finds you well. I was reviewing top businesses in the {category_in} sector across {location_in} and found your brand to be highly engaging.\n\nWe specialize in automating customer acquisition and B2B growth pipelines specifically tailored for {category_in} companies. Would you be open to a 10-minute call this week to discuss how we can drive more direct customers to your business?\n\nLooking forward to hearing from you.\n\nBest regards,\nGrowth Team"
-                    st.text_area("Ready Email Cold Pitch:", email_pitch, height=180)
+    with col3:
+        total_limit = st.number_input("🔢 Total Leads Required", min_value=10, max_value=1000, value=50, step=10)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Trigger Search
+    if st.button("🚀 Start Extracting Leads"):
+        if not category_in or not location_in:
+            st.warning("⚠️ Please provide both Category and Location to proceed.")
+            return
+
+        with st.spinner("Initializing AI Data Extraction Pipeline..."):
+            results = extract_high_capacity_leads(category_in, location_in, total_limit)
+
+        if results:
+            df = pd.DataFrame(results)
+            st.success(f"🎉 Successfully Extracted {len(df)} B2B Leads!")
+
+            # Display Data Table
+            st.dataframe(df, use_container_width=True)
+
+            # Export Options
+            csv_data = df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Leads Dataset (CSV)",
+                data=csv_data,
+                file_name=f"B2B_Leads_{category_in.replace(' ', '_')}_{location_in.replace(' ', '_')}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.error("No leads could be extracted. Please verify your search criteria and API settings.")
+
+
+if __name__ == "__main__":
+    main()
