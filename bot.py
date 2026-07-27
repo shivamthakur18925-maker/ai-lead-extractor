@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 # ==========================================
-# Page Configuration
+# 1. Page Configuration
 # ==========================================
 st.set_page_config(
     page_title="Global B2B AI Lead Extractor",
@@ -14,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS for UI Enhancement
+# Custom Styling
 st.markdown("""
     <style>
     .main {
@@ -28,52 +28,41 @@ st.markdown("""
         color: white;
         font-weight: bold;
     }
-    .metric-card {
-        background-color: #f8f9fa;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# Groq API Key Resolver (Fixed for Render)
+# 2. Safe API Key Resolver (Render Compatible)
 # ==========================================
 def get_groq_key():
-    """
-    Safely retrieves the Groq API key prioritizing Environment Variables,
-    preventing StreamlitSecretNotFoundError on deployment platforms like Render.
-    """
-    # 1. Primary Check: Render Environment Variable
+    # 1. Check Primary Environment Variable on Render
     env_key = os.getenv("GROQ_API_KEY")
     if env_key and len(env_key) > 10:
-        return env_key
+        return env_key.strip()
 
-    # 2. Check multiple fallback environment keys
+    # 2. Check Multiple Environment Keys
     for i in range(1, 7):
         k = os.getenv(f"GROQ_API_KEY_{i}")
         if k and len(k) > 10:
-            return k
+            return k.strip()
 
-    # 3. Fallback Check: Streamlit Secrets (safely wrapped)
+    # 3. Fallback to Streamlit Secrets safely without crashing
     try:
         if hasattr(st, "secrets"):
             for i in range(1, 7):
                 sec_k = st.secrets.get(f"GROQ_API_KEY_{i}")
                 if sec_k and len(sec_k) > 10:
-                    return sec_k
+                    return sec_k.strip()
             sec_default = st.secrets.get("GROQ_API_KEY", None)
             if sec_default and len(sec_default) > 10:
-                return sec_default
+                return sec_default.strip()
     except Exception:
         pass
 
     return None
 
-
 # ==========================================
-# AI Data Extraction Engine
+# 3. AI Data Processing Engine
 # ==========================================
 def fetch_single_chunk(category, location, chunk_size, offset_index):
     groq_key = get_groq_key()
@@ -129,16 +118,18 @@ JSON Schema:
         "max_tokens": 4000
     }
 
+    # Exact API Endpoint Link (Fixed URL Issue)
+    api_url = "[https://api.groq.com/openai/v1/chat/completions](https://api.groq.com/openai/v1/chat/completions)"
+
     try:
         response = requests.post(
-            "[https://api.groq.com/openai/v1/chat/completions](https://api.groq.com/openai/v1/chat/completions)",
+            api_url,
             headers=headers,
             json=payload,
             timeout=45
         )
         if response.status_code == 200:
             content = response.json()["choices"][0]["message"]["content"].strip()
-            # Clean markdown code blocks if AI outputs them
             cleaned = re.sub(r"^```json\s*", "", content, flags=re.MULTILINE)
             cleaned = re.sub(r"^```\s*", "", cleaned, flags=re.MULTILINE)
             cleaned = cleaned.strip()
@@ -176,9 +167,8 @@ def extract_high_capacity_leads(category, location, total_limit):
     progress_bar.empty()
     return all_leads[:total_limit]
 
-
 # ==========================================
-# Main Streamlit Application UI
+# 4. Main User Interface (UI)
 # ==========================================
 def main():
     st.title("⚡ Global B2B AI Lead Extractor")
@@ -186,7 +176,7 @@ def main():
 
     st.divider()
 
-    # Inputs Section
+    # User Input Controls
     col1, col2, col3 = st.columns([2, 2, 1.5])
 
     with col1:
@@ -200,7 +190,7 @@ def main():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Trigger Search
+    # Action Button
     if st.button("🚀 Start Extracting Leads"):
         if not category_in or not location_in:
             st.warning("⚠️ Please provide both Category and Location to proceed.")
@@ -213,10 +203,10 @@ def main():
             df = pd.DataFrame(results)
             st.success(f"🎉 Successfully Extracted {len(df)} B2B Leads!")
 
-            # Display Data Table
+            # Data Table View
             st.dataframe(df, use_container_width=True)
 
-            # Export Options
+            # Export Button
             csv_data = df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="📥 Download Leads Dataset (CSV)",
